@@ -20,6 +20,8 @@ import '../../../core/painters/educational_background_painter.dart';
 import 'package:provider/provider.dart';
 import '../../providers/notification_provider.dart';
 import '../notifications/notification_list_screen.dart';
+import '../../../services/notification_service.dart';
+
 
 
 
@@ -85,6 +87,7 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     _pageController = PageController();
     _initializeApp();
+    _setupNotificationCallback();  
   }
 
   /// ✨ Initialisation avec gestion automatique du refresh token
@@ -108,12 +111,29 @@ class _MainScreenState extends State<MainScreen> {
     // Charger les données
     await _loadPersonalizedHome();
     await _loadSubjects();
+
+    // ✅ AJOUT : Charger les notifications au démarrage
+    if (mounted) {
+      await Provider.of<NotificationProvider>(context, listen: false)
+          .fetchNotifications();
+    }
     
     if (mounted) {
       setState(() => _isLoading = false);
     }
     
     print('✅ Initialisation MainScreen terminée');
+  }
+
+  /// ✅ NOUVEAU : Configurer le callback pour rafraîchir les notifications
+  void _setupNotificationCallback() {
+    NotificationService.onNotificationReceived = () {
+      if (mounted) {
+        print('🔄 Rafraîchissement automatique des notifications...');
+        Provider.of<NotificationProvider>(context, listen: false)
+            .fetchNotifications();
+      }
+    };
   }
 
   /// ✨ NOUVELLE MÉTHODE : Récupérer un token valide et le mettre à jour en mémoire
@@ -251,6 +271,7 @@ class _MainScreenState extends State<MainScreen> {
   void dispose() {
     _pageController.dispose();
     _searchController.dispose();
+    NotificationService.onNotificationReceived = null;  
     super.dispose();
   }
 
