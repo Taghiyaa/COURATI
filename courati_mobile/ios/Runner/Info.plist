@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>CFBundleDevelopmentRegion</key>
+		<string>$(DEVELOPMENT_LANGUAGE)</string>
+		<key>CFBundleDisplayName</key>
+		<string>Courati</string>
+		<key>CFBundleExecutable</key>
+		<string>$(EXECUTABLE_NAME)</string>
+		<key>CFBundleIdentifier</key>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+		<key>CFBundleInfoDictionaryVersion</key>
+		<string>6.0</string>
+		<key>CFBundleName</key>
+		<string>courati_mobile</string>
+		<key>CFBundlePackageType</key>
+		<string>APPL</string>
+		<key>CFBundleShortVersionString</key>
+		<string>$(FLUTTER_BUILD_NAME)</string>
+		<key>CFBundleSignature</key>
+		<string>????</string>
+		<key>CFBundleVersion</key>
+		<string>$(FLUTTER_BUILD_NUMBER)</string>
+		<key>LSRequiresIPhoneOS</key>
+		<true/>
+		<key>UILaunchStoryboardName</key>
+		<string>LaunchScreen</string>
+		<key>UIMainStoryboardFile</key>
+		<string>Main</string>
+		<key>UISupportedInterfaceOrientations</key>
+		<array>
+			<string>UIInterfaceOrientationPortrait</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
+		</array>
+		<key>UISupportedInterfaceOrientations~ipad</key>
+		<array>
+			<string>UIInterfaceOrientationPortrait</string>
+			<string>UIInterfaceOrientationPortraitUpsideDown</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
+		</array>
+		<!-- NOUVELLES CONFIGURATIONS POUR LES FICHIERS -->
+		<!-- Permet à l'app d'apparaître dans l'app Fichiers -->
+		<key>UIFileSharingEnabled</key>
+		<true/>
+		<!-- Permet l'ouverture de documents depuis l'app Fichiers -->
+		<key>LSSupportsOpeningDocumentsInPlace</key>
+		<true/>
+		<!-- Support du navigateur de documents -->
+		<key>UISupportsDocumentBrowser</key>
+		<true/>
+		<!-- Types de documents supportés -->
+		<key>CFBundleDocumentTypes</key>
+		<array>
+			<!-- Documents PDF -->
+			<dict>
+				<key>CFBundleTypeName</key>
+				<string>PDF Document</string>
+				<key>CFBundleTypeRole</key>
+				<string>Viewer</string>
+				<key>LSItemContentTypes</key>
+				<array>
+					<string>com.adobe.pdf</string>
+				</array>
+				<key>LSHandlerRank</key>
+				<string>Default</string>
+			</dict>
+			<!-- Documents Word -->
+			<dict>
+				<key>CFBundleTypeName</key>
+				<string>Microsoft Word Document</string>
+				<key>CFBundleTypeRole</key>
+				<string>Viewer</string>
+				<key>LSItemContentTypes</key>
+				<array>
+					<string>com.microsoft.word.doc</string>
+					<string>org.openxmlformats.wordprocessingml.document</string>
+				</array>
+				<key>LSHandlerRank</key>
+				<string>Default</string>
+			</dict>
+			<!-- Documents PowerPoint -->
+			<dict>
+				<key>CFBundleTypeName</key>
+				<string>Microsoft PowerPoint Presentation</string>
+				<key>CFBundleTypeRole</key>
+				<string>Viewer</string>
+				<key>LSItemContentTypes</key>
+				<array>
+					<string>com.microsoft.powerpoint.ppt</string>
+					<string>org.openxmlformats.presentationml.presentation</string>
+				</array>
+				<key>LSHandlerRank</key>
+				<string>Default</string>
+			</dict>
+			<!-- Images -->
+			<dict>
+				<key>CFBundleTypeName</key>
+				<string>Image</string>
+				<key>CFBundleTypeRole</key>
+				<string>Viewer</string>
+				<key>LSItemContentTypes</key>
+				<array>
+					<string>public.image</string>
+					<string>public.jpeg</string>
+					<string>public.png</string>
+				</array>
+				<key>LSHandlerRank</key>
+				<string>Default</string>
+			</dict>
+		</array>
+		<!-- Types de contenu exportés -->
+		<key>UTExportedTypeDeclarations</key>
+		<array>
+			<dict>
+				<key>UTTypeIdentifier</key>
+				<string>com.courati.document</string>
+				<key>UTTypeDescription</key>
+				<string>Courati Document</string>
+				<key>UTTypeConformsTo</key>
+				<array>
+					<string>public.data</string>
+					<string>public.content</string>
+				</array>
+				<key>UTTypeTagSpecification</key>
+				<dict>
+					<key>public.filename-extension</key>
+					<array>
+						<string>pdf</string>
+						<string>doc</string>
+						<string>docx</string>
+						<string>ppt</string>
+						<string>pptx</string>
+					</array>
+				</dict>
+			</dict>
+		</array>
+		<!-- Permissions pour les caméra/photos si nécessaire -->
+		<key>NSCameraUsageDescription</key>
+		<string>Cette app a besoin d'accéder à la caméra pour scanner des documents.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Cette app a besoin d'accéder aux photos pour importer des documents.</string>
+		<!-- ✅ AJOUT : Permission pour AJOUTER aux photos (partage) -->
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>Cette app a besoin d'accéder aux photos pour partager des documents.</string>
+		<!-- Permission pour les fichiers -->
+		<key>NSDocumentsFolderUsageDescription</key>
+		<string>Cette app a besoin d'accéder aux documents pour enregistrer et ouvrir des fichiers.</string>
+		<!-- Transport Security -->
+		<key>NSAppTransportSecurity</key>
+		<dict>
+			<key>NSAllowsArbitraryLoads</key>
+			<true/>
+			<key>NSAllowsArbitraryLoadsInWebContent</key>
+			<true/>
+		</dict>
+		<key>UIStatusBarHidden</key>
+		<false/>
+	</dict>
+</plist>

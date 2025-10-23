@@ -1,0 +1,19 @@
+Django==4.2.7
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.0
+django-cors-headers==4.3.0
+python-dotenv==1.0.0
+phonenumbers==8.13.22
+twilio==8.10.0
+django-rest-framework-simplejwt==5.3.0
+python-jose==3.3.0
+python-decouple==3.8
+psycopg2-binary
+
+# ========================================
+# NOTIFICATIONS PUSH (Firebase + Celery)
+# ========================================
+firebase-admin==6.2.0
+celery==5.3.4
+redis==5.0.1
+django-celery-beat==2.5.0

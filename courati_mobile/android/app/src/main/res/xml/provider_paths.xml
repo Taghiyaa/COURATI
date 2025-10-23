@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Dossiers internes de l'app -->
+    <files-path name="files" path="."/>
+    <cache-path name="cache" path="."/>
+    
+    <!-- Dossiers externes de l'app -->
+    <external-files-path name="external_files" path="."/>
+    <external-cache-path name="external_cache" path="."/>
+    
+    <!-- Stockage externe public -->
+    <external-path name="external" path="."/>
+    
+    <!-- Dossier Downloads public -->
+    <external-path name="downloads" path="Download"/>
+    
+    <!-- Dossier Documents public -->
+    <external-path name="documents" path="Documents"/>
+</paths>

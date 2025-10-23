@@ -1,0 +1,75 @@
+# ========================================
+# PYTHON
+# ========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ========================================
+# DJANGO
+# ========================================
+*.log
+db.sqlite3
+db.sqlite3-journal
+/media/
+/staticfiles/
+/static/
+
+# Migrations (optionnel - si vous voulez ignorer les migrations)
+# **/migrations/*.py
+# !**/migrations/__init__.py
+
+# ========================================
+# FICHIERS SENSIBLES - NE JAMAIS COMMIT
+# ========================================
+
+# Variables d'environnement
+.env
+.env.local
+.env.*.local
+*.env
+
+# Firebase Admin SDK
+firebase_credentials/
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
+
+# Secrets Django
+secret_key.txt
+secrets/
+
+# ========================================
+# IDE
+# ========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ========================================
+# COVERAGE / TESTS
+# ========================================
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.pytest_cache/
+
+# ========================================
+# AUTRES
+# ========================================
+*.bak
+*.orig
+node_modules/

@@ -1,0 +1,121 @@
+# ========================================
+# PYTHON / DJANGO (courati_backend)
+# ========================================
+courati_backend/__pycache__/
+courati_backend/**/__pycache__/
+courati_backend/*.py[cod]
+courati_backend/*$py.class
+courati_backend/*.so
+courati_backend/.Python
+courati_backend/env/
+courati_backend/venv/
+courati_backend/ENV/
+courati_backend/env.bak/
+courati_backend/venv.bak/
+
+# Django
+courati_backend/*.log
+courati_backend/db.sqlite3
+courati_backend/db.sqlite3-journal
+courati_backend/media/
+courati_backend/staticfiles/
+courati_backend/static/
+
+# ========================================
+# FLUTTER / DART (courati_mobile)
+# ========================================
+
+# Miscellaneous
+courati_mobile/*.class
+courati_mobile/*.log
+courati_mobile/*.pyc
+courati_mobile/*.swp
+courati_mobile/.DS_Store
+courati_mobile/.atom/
+courati_mobile/.build/
+courati_mobile/.buildlog/
+courati_mobile/.history
+courati_mobile/.svn/
+courati_mobile/.swiftpm/
+courati_mobile/migrate_working_dir/
+
+# IntelliJ related
+courati_mobile/*.iml
+courati_mobile/*.ipr
+courati_mobile/*.iws
+courati_mobile/.idea/
+
+# Flutter/Dart/Pub related
+courati_mobile/**/doc/api/
+courati_mobile/**/ios/Flutter/.last_build_id
+courati_mobile/.dart_tool/
+courati_mobile/.flutter-plugins
+courati_mobile/.flutter-plugins-dependencies
+courati_mobile/.packages
+courati_mobile/.metadata
+courati_mobile/.pub-cache/
+courati_mobile/.pub/
+courati_mobile/build/
+courati_mobile/coverage/
+
+# Symbolication related
+courati_mobile/app.*.symbols
+
+# Obfuscation related
+courati_mobile/app.*.map.json
+
+# Android Studio will place build artifacts here
+courati_mobile/android/app/debug
+courati_mobile/android/app/profile
+courati_mobile/android/app/release
+
+# ========================================
+# FICHIERS SENSIBLES - NE JAMAIS COMMIT
+# ========================================
+
+# Firebase Backend
+courati_backend/firebase_credentials/
+courati_backend/serviceAccountKey.json
+courati_backend/*-firebase-adminsdk-*.json
+
+# Firebase Mobile
+courati_mobile/android/app/google-services.json
+courati_mobile/ios/Runner/GoogleService-Info.plist
+courati_mobile/lib/firebase_options.dart
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+courati_backend/.env
+courati_mobile/.env
+
+# ========================================
+# IDE - GLOBAL
+# ========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ========================================
+# COVERAGE / TESTS
+# ========================================
+courati_backend/htmlcov/
+courati_backend/.tox/
+courati_backend/.coverage
+courati_backend/.coverage.*
+courati_backend/.cache
+courati_backend/nosetests.xml
+courati_backend/coverage.xml
+courati_backend/*.cover
+courati_backend/.pytest_cache/
+
+# ========================================
+# AUTRES
+# ========================================
+*.bak
+*.orig
+node_modules/
