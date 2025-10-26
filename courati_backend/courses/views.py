@@ -1904,3 +1904,79 @@ class ProjectTaskViewSet(viewsets.ModelViewSet):
             'is_important': task.is_important,
             'message': f"Tâche marquée comme {'importante' if task.is_important else 'normale'}"
         })
+
+# ========================================
+# VUE DÉTAIL MATIÈRE PAR ID
+# ========================================
+
+class SubjectDetailAPIView(APIView):
+    """
+    Récupérer les détails d'une matière par son ID
+    GET /api/courses/subjects/{id}/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, subject_id):
+        user = request.user
+        logger.info(f"📖 Détail matière {subject_id} par: {user.username}")
+        
+        try:
+            # Récupérer la matière
+            subject = Subject.objects.get(id=subject_id, is_active=True)
+            
+            # Vérifier l'accès selon le rôle
+            if user.role == 'STUDENT':
+                try:
+                    student_profile = user.student_profile
+                    
+                    # Vérifier que l'étudiant a accès à cette matière
+                    if not (
+                        subject.levels.filter(id=student_profile.level.id).exists() and
+                        subject.majors.filter(id=student_profile.major.id).exists()
+                    ):
+                        return Response({
+                            'success': False,
+                            'error': 'Vous n\'avez pas accès à cette matière'
+                        }, status=status.HTTP_403_FORBIDDEN)
+                
+                except AttributeError:
+                    return Response({
+                        'success': False,
+                        'error': 'Profil étudiant non trouvé'
+                    }, status=status.HTTP_404_NOT_FOUND)
+            
+            elif user.role == 'TEACHER':
+                # Vérifier que le professeur a accès à cette matière
+                if not has_subject_access(user, subject):
+                    return Response({
+                        'success': False,
+                        'error': 'Vous n\'avez pas accès à cette matière'
+                    }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Annoter avec le nombre de documents
+            subject = Subject.objects.filter(id=subject_id).annotate(
+                document_count=Count('documents', filter=Q(documents__is_active=True))
+            ).first()
+            
+            # Sérialiser avec SubjectDetailSerializer
+            from .serializers import SubjectDetailSerializer
+            serializer = SubjectDetailSerializer(subject, context={'request': request})
+            
+            return Response({
+                'success': True,
+                'subject': serializer.data
+            })
+            
+        except Subject.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Matière non trouvée'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        except Exception as e:
+            logger.error(f"❌ Erreur détail matière {subject_id}: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

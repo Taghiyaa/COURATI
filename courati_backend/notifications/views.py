@@ -44,27 +44,60 @@ class FCMTokenRegisterView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            # ✅ Bypasser le serializer, faire update_or_create directement
-            fcm_token, created = FCMToken.objects.update_or_create(
-                user=user,
-                token=token,
-                defaults={
-                    'device_type': device_type,
-                    'is_active': True
-                }
-            )
+            # ✅ CORRECTION : Gérer le cas où le token existe déjà pour un autre user
             
-            action = 'créé' if created else 'mis à jour'
-            logger.info(f"✅ Token FCM {action} pour {user.username}")
+            # 1. Chercher si le token existe déjà
+            existing_token = FCMToken.objects.filter(token=token).first()
             
-            # Utiliser le serializer juste pour formater la réponse
-            serializer = FCMTokenSerializer(fcm_token)
-            
-            return Response({
-                'success': True,
-                'message': f'Token FCM {action} avec succès',
-                'token': serializer.data
-            }, status=status.HTTP_201_CREATED)
+            if existing_token:
+                # Le token existe déjà
+                if existing_token.user == user:
+                    # ✅ Même utilisateur : juste mettre à jour
+                    existing_token.device_type = device_type
+                    existing_token.is_active = True
+                    existing_token.save()
+                    
+                    logger.info(f"✅ Token FCM mis à jour pour {user.username}")
+                    serializer = FCMTokenSerializer(existing_token)
+                    
+                    return Response({
+                        'success': True,
+                        'message': 'Token FCM mis à jour avec succès',
+                        'token': serializer.data
+                    }, status=status.HTTP_200_OK)
+                else:
+                    # ⚠️ Autre utilisateur : réassigner le token
+                    logger.warning(f"⚠️ Token FCM transféré de {existing_token.user.username} à {user.username}")
+                    
+                    existing_token.user = user
+                    existing_token.device_type = device_type
+                    existing_token.is_active = True
+                    existing_token.save()
+                    
+                    serializer = FCMTokenSerializer(existing_token)
+                    
+                    return Response({
+                        'success': True,
+                        'message': 'Token FCM réassigné avec succès',
+                        'token': serializer.data
+                    }, status=status.HTTP_200_OK)
+            else:
+                # ✅ Token n'existe pas : créer un nouveau
+                fcm_token = FCMToken.objects.create(
+                    user=user,
+                    token=token,
+                    device_type=device_type,
+                    is_active=True
+                )
+                
+                logger.info(f"✅ Token FCM créé pour {user.username}")
+                serializer = FCMTokenSerializer(fcm_token)
+                
+                return Response({
+                    'success': True,
+                    'message': 'Token FCM créé avec succès',
+                    'token': serializer.data
+                }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
             logger.error(f"❌ Erreur enregistrement token: {str(e)}")

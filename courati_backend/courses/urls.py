@@ -20,6 +20,8 @@ urlpatterns = [
     # APIs ÉTUDIANTS - Consultation des cours
     # ========================================
     path('my-subjects/', views.StudentSubjectsView.as_view(), name='student-subjects'),
+    # Route pour récupérer UNE matière par ID
+    path('subjects/<int:subject_id>/', views.SubjectDetailAPIView.as_view(), name='subject-detail'),
     path('subjects/<int:subject_id>/documents/', views.SubjectDocumentsView.as_view(), name='subject-documents'),
     
     # Gestion des favoris

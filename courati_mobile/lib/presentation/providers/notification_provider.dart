@@ -30,8 +30,15 @@ class NotificationProvider with ChangeNotifier {
       _error = null;
       notifyListeners();
 
-      final token = StorageService.getAccessToken();
-      if (token == null) return;
+      // ✅ CORRECTION : Utiliser getValidAccessToken au lieu de getAccessToken
+      final token = await StorageService.getValidAccessToken();
+      
+      if (token == null) {
+        _error = 'Session expirée';
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
 
       final response = await http.get(
         Uri.parse(ApiEndpoints.notificationPreferences),
@@ -46,6 +53,7 @@ class NotificationProvider with ChangeNotifier {
         _preferences = NotificationPreferenceModel.fromJson(data['preferences']);
       } else {
         _error = 'Erreur lors du chargement des préférences';
+        print('❌ Erreur fetchPreferences: ${response.statusCode}');
       }
     } catch (e) {
       _error = e.toString();
@@ -65,8 +73,15 @@ class NotificationProvider with ChangeNotifier {
       _error = null;
       notifyListeners();
 
-      final token = StorageService.getAccessToken();
-      if (token == null) return false;
+      // ✅ CORRECTION : Utiliser getValidAccessToken
+      final token = await StorageService.getValidAccessToken();
+      
+      if (token == null) {
+        _error = 'Session expirée';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
 
       final response = await http.put(
         Uri.parse(ApiEndpoints.notificationPreferences),
@@ -84,6 +99,7 @@ class NotificationProvider with ChangeNotifier {
         return true;
       } else {
         _error = 'Erreur lors de la mise à jour';
+        print('❌ Erreur updatePreferences: ${response.statusCode}');
         notifyListeners();
         return false;
       }
@@ -152,7 +168,8 @@ class NotificationProvider with ChangeNotifier {
   // ========================================
   Future<void> markAsRead(int notificationId) async {
     try {
-      final token = StorageService.getAccessToken();
+      // ✅ CORRECTION : Utiliser getValidAccessToken
+      final token = await StorageService.getValidAccessToken();
       if (token == null) return;
 
       final response = await http.patch(
@@ -190,7 +207,8 @@ class NotificationProvider with ChangeNotifier {
   // ========================================
   Future<void> markAllAsRead() async {
     try {
-      final token = StorageService.getAccessToken();
+      // ✅ CORRECTION : Utiliser getValidAccessToken
+      final token = await StorageService.getValidAccessToken();
       if (token == null) return;
 
       final response = await http.post(
@@ -201,6 +219,8 @@ class NotificationProvider with ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
+        print('✅ Toutes les notifications marquées comme lues');
+        
         // Mettre à jour localement
         _notifications = _notifications.map((n) => NotificationModel(
           id: n.id,

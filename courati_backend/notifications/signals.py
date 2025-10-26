@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 
 from courses.models import Document, Quiz
 from accounts.models import StudentProfile
+from .models import NotificationHistory  # ✅ AJOUT CRUCIAL
 from .services import send_push_notification
 
 logger = logging.getLogger(__name__)
@@ -22,15 +23,14 @@ def notify_new_document(sender, instance, created, **kwargs):
     Envoyer une notification quand un nouveau document est uploadé
     """
     if not created:
-        return  # Uniquement pour les nouveaux documents
+        return
     
     document = instance
     subject = document.subject
     
-    # ✅ CHANGEMENT : Utiliser print() au lieu de logger.info()
     print(f"📚 Nouveau document détecté: {document.title} ({subject.code})")
     
-    # Récupérer tous les étudiants concernés par cette matière
+    # Récupérer tous les étudiants concernés
     students = User.objects.filter(
         role='STUDENT',
         student_profile__level__in=subject.levels.all(),
@@ -64,7 +64,7 @@ def notify_new_document(sender, instance, created, **kwargs):
         title = f"📚 Nouveau {doc_type_display.lower()} disponible !"
         body = f"{document.title} en {subject.name}"
         
-        # Données supplémentaires (pour deep linking)
+        # Données supplémentaires
         data = {
             'type': 'new_document',
             'document_id': str(document.id),
@@ -72,7 +72,21 @@ def notify_new_document(sender, instance, created, **kwargs):
             'document_type': document.document_type,
         }
         
-        # Envoyer la notification
+        # ✅ ÉTAPE 1 : ENREGISTRER dans NotificationHistory (BDD)
+        try:
+            notification_history = NotificationHistory.objects.create(
+                user=student,
+                notification_type='new_document',
+                title=title,
+                message=body,
+                data=data
+            )
+            print(f"💾 Notification #{notification_history.id} enregistrée en BDD pour {student.username}")
+        except Exception as e:
+            print(f"❌ Erreur enregistrement BDD pour {student.username}: {e}")
+            continue
+        
+        # ✅ ÉTAPE 2 : Envoyer la notification push (Firebase)
         success = send_push_notification(
             user=student,
             title=title,
@@ -81,9 +95,9 @@ def notify_new_document(sender, instance, created, **kwargs):
         )
         
         if success:
-            print(f"✅ Notification envoyée à {student.username}")
+            print(f"✅ Notification push envoyée à {student.username}")
         else:
-            print(f"❌ Échec notification pour {student.username}")
+            print(f"⚠️ Échec notification push pour {student.username} (mais enregistrée en BDD)")
 
 
 # ========================================
@@ -96,7 +110,7 @@ def notify_new_quiz(sender, instance, created, **kwargs):
     Envoyer une notification quand un nouveau quiz est créé
     """
     if not created:
-        return  # Uniquement pour les nouveaux quiz
+        return
     
     quiz = instance
     subject = quiz.subject
@@ -143,7 +157,21 @@ def notify_new_quiz(sender, instance, created, **kwargs):
             'subject_id': str(subject.id),
         }
         
-        # Envoyer la notification
+        # ✅ ÉTAPE 1 : ENREGISTRER dans NotificationHistory (BDD)
+        try:
+            notification_history = NotificationHistory.objects.create(
+                user=student,
+                notification_type='new_quiz',
+                title=title,
+                message=body,
+                data=data
+            )
+            print(f"💾 Notification quiz #{notification_history.id} enregistrée en BDD pour {student.username}")
+        except Exception as e:
+            print(f"❌ Erreur enregistrement BDD pour {student.username}: {e}")
+            continue
+        
+        # ✅ ÉTAPE 2 : Envoyer la notification push (Firebase)
         success = send_push_notification(
             user=student,
             title=title,
@@ -152,6 +180,32 @@ def notify_new_quiz(sender, instance, created, **kwargs):
         )
         
         if success:
-            print(f"✅ Notification quiz envoyée à {student.username}")
+            print(f"✅ Notification quiz push envoyée à {student.username}")
         else:
-            print(f"❌ Échec notification quiz pour {student.username}")
+            print(f"⚠️ Échec notification quiz push pour {student.username} (mais enregistrée en BDD)")
+
+
+# ========================================
+# SIGNAL : CRÉER PRÉFÉRENCES PAR DÉFAUT
+# ========================================
+
+@receiver(post_save, sender=User)
+def create_default_notification_preferences(sender, instance, created, **kwargs):
+    """
+    Créer automatiquement les préférences de notification pour chaque nouvel utilisateur
+    avec tous les types de notifications activés par défaut
+    """
+    if created:
+        from .models import NotificationPreference
+        
+        NotificationPreference.objects.get_or_create(
+            user=instance,
+            defaults={
+                'notifications_enabled': True,
+                'new_content_enabled': True,
+                'quiz_enabled': True,  # ✅ FORCÉ À TRUE
+                'deadline_reminders_enabled': True,
+            }
+        )
+        
+        logger.info(f"✅ Préférences de notification créées pour {instance.username}")

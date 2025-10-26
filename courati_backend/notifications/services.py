@@ -10,85 +10,92 @@ logger = logging.getLogger(__name__)
 
 def send_push_notification(user, title, body, data=None):
     """
-    Envoie une notification push via Firebase
-    
-    Args:
-        user: Utilisateur destinataire
-        title: Titre de la notification
-        body: Corps du message
-        data: Dict de données supplémentaires (optionnel)
-    
-    Returns:
-        bool: True si succès, False sinon
+    Envoyer une notification push via Firebase
     """
-    # ✅ CHANGEMENT IMPORTANT : Créer l'historique AVANT d'essayer d'envoyer
-    # Comme ça, même si l'envoi échoue, on garde une trace
-    notification_history = NotificationHistory.objects.create(
-        user=user,
-        notification_type=data.get('type', 'unknown') if data else 'unknown',
-        title=title,
-        message=body,
-        data=data,
-    )
-    logger.info(f"📝 Historique enregistré pour {user.username}")
+    from firebase_admin import messaging
+    import logging
     
-    try:
-        # 1. Récupérer le token FCM de l'utilisateur
-        fcm_token = FCMToken.objects.filter(
-            user=user, 
-            is_active=True
-        ).first()
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"📤 Tentative d'envoi notification à {user.username}")
+    logger.info(f"   Titre: {title}")
+    logger.info(f"   Body: {body}")
+    logger.info(f"   Data: {data}")
+    
+    # Récupérer les tokens FCM actifs de l'utilisateur
+    tokens = FCMToken.objects.filter(user=user, is_active=True)
+    
+    logger.info(f"🔑 {tokens.count()} token(s) FCM actif(s) pour {user.username}")
+    
+    if not tokens.exists():
+        logger.warning(f"⚠️ Aucun token FCM actif pour {user.username}")
+        return False
+    
+    success_count = 0
+    
+    for fcm_token in tokens:
+        logger.info(f"📱 Envoi vers token: {fcm_token.token[:50]}...")
         
-        if not fcm_token:
-            logger.warning(f"⚠️ Aucun token FCM actif pour {user.username}")
-            return False
-        
-        # 2. Vérifier les préférences
-        prefs = getattr(user, 'notification_preference', None)
-        if prefs and not prefs.notifications_enabled:
-            logger.info(f"🔕 Notifications désactivées pour {user.username}")
-            return False
-        
-        # 3. Vérifier heures silencieuses
-        if prefs and prefs.quiet_hours_enabled:
-            if is_quiet_hours(prefs):
-                logger.info(f"😴 Heures silencieuses pour {user.username}")
-                return False
-        
-        # 4. Construire le message FCM
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title=title,
-                body=body,
-            ),
-            data=data or {},
-            token=fcm_token.token,
-        )
-        
-        # 5. Envoyer via Firebase
-        response = messaging.send(message)
-        
-        logger.info(f"✅ Notification Firebase envoyée à {user.username}: {response}")
+        try:
+            # ✅ Convertir toutes les valeurs en string
+            clean_data = {}
+            if data:
+                for key, value in data.items():
+                    clean_data[key] = str(value) if value is not None else ''
+            
+            logger.info(f"📦 Data nettoyée: {clean_data}")
+            
+            # Construire le message
+            message = messaging.Message(
+                notification=messaging.Notification(
+                    title=title,
+                    body=body,
+                ),
+                data=clean_data,
+                token=fcm_token.token,
+            )
+            
+            logger.info(f"✉️ Message construit, envoi en cours...")
+            
+            # Envoyer via Firebase
+            response = messaging.send(message)
+            
+            logger.info(f"✅ Notification envoyée à {user.username}: {response}")
+            success_count += 1
+            
+        except messaging.UnregisteredError as e:
+            logger.warning(f"⚠️ Token invalide pour {user.username}: {str(e)}")
+            fcm_token.is_active = False
+            fcm_token.save()
+            
+        except messaging.SenderIdMismatchError as e:
+            logger.error(f"❌ Sender ID mismatch pour {user.username}: {str(e)}")
+            fcm_token.is_active = False
+            fcm_token.save()
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur envoi notification à {user.username}")
+            logger.error(f"   Type: {type(e).__name__}")
+            logger.error(f"   Message: {str(e)}")
+            
+            import traceback
+            logger.error(f"   Traceback: {traceback.format_exc()}")
+            
+            # Si c'est une erreur réseau, on continue
+            if "Connection" in str(type(e).__name__) or "Transport" in str(type(e).__name__):
+                logger.warning(f"⚠️ Erreur réseau temporaire, le token reste actif")
+                continue
+            
+            # Pour les autres erreurs, désactiver le token
+            logger.warning(f"⚠️ Désactivation du token à cause de l'erreur")
+            fcm_token.is_active = False
+            fcm_token.save()
+    
+    if success_count > 0:
+        logger.info(f"✅ {success_count} notification(s) envoyée(s) avec succès")
         return True
-        
-    except messaging.UnregisteredError:
-        # Token invalide ou app désinstallée
-        logger.warning(f"🔄 Token FCM invalide pour {user.username}, désactivation")
-        if fcm_token:
-            fcm_token.is_active = False
-            fcm_token.save()
-        return False
-    
-    except messaging.InvalidArgumentError as e:
-        # Token mal formé (comme notre token de test)
-        logger.error(f"❌ Token FCM mal formé pour {user.username}: {e}")
-        if fcm_token:
-            fcm_token.is_active = False
-            fcm_token.save()
-        return False
-        
-    except Exception as e:
-        logger.error(f"❌ Erreur envoi Firebase à {user.username}: {e}")
+    else:
+        logger.error(f"❌ Aucune notification envoyée")
         return False
 
 

@@ -10,6 +10,7 @@ import '../home/home_screen.dart';
 import 'register_step1_screen.dart';
 import 'forgot_password_screen.dart';
 import '../main/main_screen.dart';
+import '../../../services/notification_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -63,6 +64,13 @@ class _LoginScreenState extends State<LoginScreen> {
         'student_profile': response.studentProfile?.toJson(),
       };
       await StorageService.saveUserData(jsonEncode(userData));
+
+     
+      // ✅ Initialiser et enregistrer le token
+      print('🔔 Configuration des notifications...');
+      await NotificationService.initialize();
+      await NotificationService.ensureTokenRegistered();
+      print('✅ Notifications configurées');
 
       print('Connexion réussie');
 

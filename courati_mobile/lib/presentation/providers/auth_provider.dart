@@ -180,20 +180,39 @@ class AuthProvider with ChangeNotifier {
       _error = null;
       notifyListeners();
 
-      await NotificationService.deleteToken();
+      if (kDebugMode) {
+        print('🚪 Déconnexion en cours...');
+      }
+
+      // ✅ Tentative de suppression du token FCM (non bloquante)
+      try {
+        await NotificationService.deleteToken();
+        if (kDebugMode) {
+          print('🗑️ Token FCM supprimé du backend');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('⚠️ Impossible de supprimer le token FCM: $e');
+          print('   (Probablement hors ligne, ce n\'est pas grave)');
+        }
+        // Ne pas bloquer la déconnexion
+      }
+      
+      // Supprimer les données locales (critique !)
       await StorageService.logout();
       
+      // Réinitialiser l'état
       _user = null;
       _isLoggedIn = false;
       
       if (kDebugMode) {
-        print('User logged out successfully');
+        print('✅ User logged out successfully');
       }
       
     } catch (e) {
       _error = 'Logout failed: ${e.toString()}';
       if (kDebugMode) {
-        print('Logout failed: $e');
+        print('❌ Logout failed: $e');
       }
     } finally {
       _isLoading = false;

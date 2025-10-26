@@ -21,6 +21,7 @@ import 'package:provider/provider.dart';
 import '../../providers/notification_provider.dart';
 import '../notifications/notification_list_screen.dart';
 import '../../../services/notification_service.dart';
+import '../notifications/notification_preferences_screen.dart';
 
 
 
@@ -2306,7 +2307,7 @@ Widget _buildBubbleNavItem(IconData inactiveIcon, IconData activeIcon, String la
                 ),
                 _buildModernDrawerItem(
                   icon: Icons.track_changes,
-                  title: 'Suivi des activités',
+                  title: 'Mes activités',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(
@@ -2317,6 +2318,20 @@ Widget _buildBubbleNavItem(IconData inactiveIcon, IconData activeIcon, String la
                     );
                   },
                 ),
+
+                _buildModernDrawerItem(
+                icon: Icons.notifications_outlined,
+                title: 'Paramètres de notifications',
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationPreferencesScreen(),
+                    ),
+                  );
+                },
+              ),
                
                 _buildModernDrawerItem(
                   icon: Icons.info_outline,

@@ -29,17 +29,27 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   static bool _isInitialized = false;
+  static String? _currentToken;
 
   // Callback pour notifier quand une notification arrive
   static Function()? onNotificationReceived;
 
   // ========================================
-  // INITIALISATION
+  // INITIALISATION (une seule fois)
   // ========================================
   static Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (_isInitialized) {
+      if (kDebugMode) {
+        print('ℹ️  Service déjà initialisé');
+      }
+      return;
+    }
 
     try {
+      if (kDebugMode) {
+        print('🔄 Initialisation du service de notifications...');
+      }
+
       // 1. Initialiser Firebase
       await Firebase.initializeApp();
 
@@ -51,33 +61,189 @@ class NotificationService {
         provisional: false,
       );
 
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        if (kDebugMode) {
-          print('✅ Permission notifications accordée');
-        }
-
-        // 3. Configurer les notifications locales
-        await _setupLocalNotifications();
-
-        // 4. Récupérer et enregistrer le token FCM
-        await _registerFCMToken();
-
-        // 5. Écouter les notifications
-        _setupMessageListeners();
-
-        // 6. Handler pour notifications en arrière-plan
-        FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-        _isInitialized = true;
-      } else {
+      if (settings.authorizationStatus != AuthorizationStatus.authorized) {
         if (kDebugMode) {
           print('❌ Permission notifications refusée');
         }
+        return;
       }
+
+      if (kDebugMode) {
+        print('✅ Permission notifications accordée');
+      }
+
+      // 3. Configurer les notifications locales
+      await _setupLocalNotifications();
+
+      // 4. Écouter les notifications
+      _setupMessageListeners();
+
+      // 5. Handler pour notifications en arrière-plan
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+      // 6. Récupérer le token FCM
+      _currentToken = await _messaging.getToken();
+      
+      if (kDebugMode) {
+        print('✅ Service de notifications initialisé');
+        print('📱 Token FCM: ${_currentToken ?? "Non disponible"}');
+      }
+
+      _isInitialized = true;
+      
     } catch (e) {
       if (kDebugMode) {
         print('❌ Erreur initialisation notifications: $e');
       }
+    }
+  }
+
+  // ========================================
+  // ENREGISTRER LE TOKEN AU BACKEND (peut être appelé plusieurs fois)
+  // ========================================
+  static Future<bool> ensureTokenRegistered() async {
+    try {
+      // S'assurer que le service est initialisé
+      if (!_isInitialized) {
+        await initialize();
+      }
+
+      // Récupérer le token
+      String? token = _currentToken ?? await _messaging.getToken();
+      
+      if (token == null || token.isEmpty) {
+        if (kDebugMode) {
+          print('⚠️ Aucun token FCM disponible');
+        }
+        return false;
+      }
+
+      // Attendre que le token JWT soit disponible
+      String? accessToken = await _waitForAccessToken();
+      
+      if (accessToken == null) {
+        if (kDebugMode) {
+          print('⚠️ Token JWT non disponible, enregistrement FCM impossible');
+        }
+        return false;
+      }
+
+      // Enregistrer le token au backend
+      return await _sendTokenToBackend(token, accessToken);
+      
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Erreur ensureTokenRegistered: $e');
+      }
+      return false;
+    }
+  }
+
+  // ========================================
+  // FORCER LE RAFRAÎCHISSEMENT DU TOKEN
+  // ========================================
+  static Future<bool> refreshToken() async {
+    try {
+      if (kDebugMode) {
+        print('🔄 Rafraîchissement du token FCM...');
+      }
+
+      // Supprimer l'ancien token Firebase (optionnel)
+      await _messaging.deleteToken();
+      
+      // Récupérer un nouveau token
+      _currentToken = await _messaging.getToken();
+      
+      if (kDebugMode) {
+        print('📱 Nouveau token: ${_currentToken ?? "Non disponible"}');
+      }
+
+      // Enregistrer le nouveau token
+      return await ensureTokenRegistered();
+      
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Erreur refreshToken: $e');
+      }
+      return false;
+    }
+  }
+
+  // ========================================
+  // ATTENDRE QUE LE TOKEN JWT SOIT DISPONIBLE
+  // ========================================
+  static Future<String?> _waitForAccessToken() async {
+    String? accessToken;
+    int retries = 0;
+    const maxRetries = 10;
+    
+    while (accessToken == null && retries < maxRetries) {
+      accessToken = await StorageService.getValidAccessToken();
+      
+      if (accessToken == null) {
+        if (kDebugMode && retries == 0) {
+          print('⏳ Attente du token JWT...');
+        }
+        await Future.delayed(const Duration(milliseconds: 500));
+        retries++;
+      }
+    }
+    
+    if (accessToken == null && kDebugMode) {
+      print('❌ Token JWT toujours indisponible après ${maxRetries} tentatives');
+    }
+    
+    return accessToken;
+  }
+
+  // ========================================
+  // ENVOYER LE TOKEN AU BACKEND
+  // ========================================
+  static Future<bool> _sendTokenToBackend(String token, String accessToken) async {
+    try {
+      final payload = {
+        'token': token,
+        'device_type': defaultTargetPlatform == TargetPlatform.android
+            ? 'android'
+            : 'ios',
+      };
+      
+      if (kDebugMode) {
+        print('📤 Envoi token FCM au backend...');
+      }
+
+      final response = await http.post(
+        Uri.parse(ApiEndpoints.fcmToken),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(payload),
+      );
+
+      if (kDebugMode) {
+        print('📥 Réponse: ${response.statusCode}');
+      }
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if (kDebugMode) {
+          final body = jsonDecode(response.body);
+          print('✅ ${body['message'] ?? 'Token FCM enregistré'}');
+        }
+        return true;
+      } else {
+        if (kDebugMode) {
+          print('❌ Erreur: ${response.statusCode}');
+          print('   ${response.body}');
+        }
+        return false;
+      }
+      
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Erreur envoi token: $e');
+      }
+      return false;
     }
   }
 
@@ -107,70 +273,6 @@ class NotificationService {
   }
 
   // ========================================
-// ENREGISTRER TOKEN FCM AU BACKEND
-// ========================================
-static Future<void> _registerFCMToken() async {
-  try {
-    String? token = await _messaging.getToken();
-
-    if (token != null && token.isNotEmpty) {
-      if (kDebugMode) {
-        print('📱 Token FCM: $token');
-      }
-
-      final accessToken = await StorageService.getValidAccessToken();
-      
-      if (accessToken != null && accessToken.isNotEmpty) {
-        // ✅ AJOUT : Log du payload
-        final payload = {
-          'token': token,
-          'device_type': defaultTargetPlatform == TargetPlatform.android
-              ? 'android'
-              : 'ios',
-        };
-        
-        if (kDebugMode) {
-          print('📤 Envoi payload FCM: $payload');
-        }
-
-        final response = await http.post(
-          Uri.parse(ApiEndpoints.fcmToken),
-          headers: {
-            'Authorization': 'Bearer $accessToken',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode(payload),
-        );
-
-        if (kDebugMode) {
-          print('📥 Réponse FCM: ${response.statusCode}');
-          print('📥 Body: ${response.body}');
-        }
-
-        if (response.statusCode == 201) {
-          if (kDebugMode) {
-            print('✅ Token FCM enregistré au backend');
-          }
-        } else {
-          if (kDebugMode) {
-            print('❌ Erreur enregistrement token: ${response.statusCode}');
-            print('   Body: ${response.body}');
-          }
-        }
-      } else {
-        if (kDebugMode) {
-          print('⏭️ JWT invalide ou expiré');
-        }
-      }
-    }
-  } catch (e) {
-    if (kDebugMode) {
-      print('❌ Erreur _registerFCMToken: $e');
-    }
-  }
-}
-
-  // ========================================
   // ÉCOUTER LES NOTIFICATIONS
   // ========================================
   static void _setupMessageListeners() {
@@ -180,8 +282,6 @@ static Future<void> _registerFCMToken() async {
         print('📩 Notification foreground: ${message.notification?.title}');
       }
       _showLocalNotification(message);
-      
-      //  Notifier le provider
       onNotificationReceived?.call();
     });
 
@@ -191,8 +291,6 @@ static Future<void> _registerFCMToken() async {
         print('🔔 Notification cliquée (background): ${message.notification?.title}');
       }
       _handleNotificationClick(message);
-      
-      // Notifier le provider
       onNotificationReceived?.call();
     });
 
@@ -203,8 +301,6 @@ static Future<void> _registerFCMToken() async {
           print('🔔 Notification cliquée (terminated): ${message.notification?.title}');
         }
         _handleNotificationClick(message);
-        
-        //  Notifier le provider
         onNotificationReceived?.call();
       }
     });
@@ -251,18 +347,11 @@ static Future<void> _registerFCMToken() async {
     final type = data['type'];
 
     if (kDebugMode) {
-      print('🎯 Type de notification: $type');
+      print('🎯 Type: $type');
       print('📦 Data: $data');
     }
 
-    // TODO: Navigation vers la bonne page selon le type
-    // Exemples :
-    // - new_document → Aller vers la page du document
-    // - new_quiz → Aller vers la page du quiz
-    // - project_reminder → Aller vers la page du projet
-
-    // Pour l'instant, on log juste les infos
-    // Vous pourrez implémenter la navigation plus tard
+    // TODO: Navigation selon le type
   }
 
   // ========================================
@@ -274,8 +363,6 @@ static Future<void> _registerFCMToken() async {
       if (kDebugMode) {
         print('🎯 Notification locale cliquée: $data');
       }
-      // TODO: Navigation
-      //  Notifier le provider
       onNotificationReceived?.call();
     }
   }
@@ -285,9 +372,11 @@ static Future<void> _registerFCMToken() async {
   // ========================================
   static Future<void> deleteToken() async {
     try {
-      String? token = await _messaging.getToken();
+      String? token = _currentToken ?? await _messaging.getToken();
+      
       if (token != null) {
-        final accessToken = StorageService.getAccessToken();
+        final accessToken = await StorageService.getAccessToken();
+        
         if (accessToken != null) {
           await http.delete(
             Uri.parse(ApiEndpoints.deleteFcmToken(token)),
@@ -295,16 +384,29 @@ static Future<void> _registerFCMToken() async {
               'Authorization': 'Bearer $accessToken',
             },
           );
+          
           if (kDebugMode) {
             print('🗑️ Token FCM supprimé du backend');
           }
         }
       }
+      
       await _messaging.deleteToken();
+      _currentToken = null;
+      
     } catch (e) {
       if (kDebugMode) {
         print('❌ Erreur suppression token: $e');
       }
     }
+  }
+
+  // ========================================
+  // RÉINITIALISER (pour tests uniquement)
+  // ========================================
+  static void reset() {
+    _isInitialized = false;
+    _currentToken = null;
+    onNotificationReceived = null;
   }
 }

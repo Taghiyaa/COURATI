@@ -362,18 +362,9 @@ class ProfileScreen extends StatelessWidget {
           
           const SizedBox(height: 12),
           
-          _buildActionButton(
-            icon: Icons.notifications_outlined,
-            title: 'Notifications',
-            subtitle: 'Gérer vos préférences',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Notifications - Fonctionnalité à venir')),
-              );
-            },
-          ),
+      
           
-          const SizedBox(height: 20),
+          
           
           const Divider(),
           

@@ -4,8 +4,11 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/notification_model.dart';
+import '../../../data/models/subject_model.dart';
+import '../../../services/storage_service.dart';
 import '../../providers/notification_provider.dart';
 import '../courses/subject_detail_screen.dart';
+import '../quiz/quiz_list_screen.dart';
 
 class NotificationListScreen extends StatefulWidget {
   const NotificationListScreen({super.key});
@@ -75,7 +78,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
           return RefreshIndicator(
             onRefresh: _refreshNotifications,
             child: ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(vertical: 16),
               itemCount: provider.notifications.length,
               itemBuilder: (context, index) {
                 final notification = provider.notifications[index];
@@ -128,8 +131,9 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Toutes les notifications marquées comme lues'),
+          content: Text('✓ Toutes les notifications marquées comme lues'),
           duration: Duration(seconds: 2),
+          backgroundColor: AppColors.success,
         ),
       );
     }
@@ -139,34 +143,66 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
     NotificationModel notification,
     NotificationProvider provider,
   ) async {
-    // Marquer comme lu
     if (!notification.read) {
       await provider.markAsRead(notification.id);
     }
 
-    // Navigation selon le type
-    if (notification.data != null) {
-      final type = notification.data!['type'];
-      
-      if (type == 'new_document' || type == 'new_quiz') {
-        final subjectId = notification.data!['subject_id'];
-        if (subjectId != null && mounted) {
-          // TODO: Naviguer vers la page du sujet
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Navigation vers sujet $subjectId'),
-              duration: const Duration(seconds: 2),
+    if (notification.data == null || !mounted) return;
+
+    final type = notification.data!['type'];
+    final accessToken = await StorageService.getAccessToken();
+    
+    if (accessToken == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ Erreur : Session expirée'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (type == 'new_document') {
+      final subjectId = notification.data!['subject_id'];
+      if (subjectId != null) {
+        final subjectIdInt = int.tryParse(subjectId.toString());
+        if (subjectIdInt != null && mounted) {
+          final subject = SubjectModel(
+            id: subjectIdInt,
+            name: '',
+            code: '',
+            credits: 0,
+            isFeatured: false,
+            levelNames: const [],
+            majorNames: const [],
+            documentCount: 0,
+            isFavorite: false,
+          );
+          
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => SubjectDetailScreen(
+                subject: subject,
+                accessToken: accessToken,
+              ),
             ),
           );
         }
       }
+    } else if (type == 'new_quiz') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => QuizListScreen(accessToken: accessToken),
+        ),
+      );
     }
   }
 }
 
-// ========================================
-// WIDGET : NOTIFICATION ITEM
-// ========================================
 class _NotificationItem extends StatelessWidget {
   final NotificationModel notification;
   final VoidCallback onTap;
@@ -179,21 +215,15 @@ class _NotificationItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
-        color: notification.read ? Colors.white : AppColors.primary.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: notification.read
-              ? Colors.grey[200]!
-              : AppColors.primary.withOpacity(0.2),
-          width: 1,
-        ),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.08),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -201,30 +231,18 @@ class _NotificationItem extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Icône
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: _getNotificationColor().withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    _getNotificationIcon(),
-                    color: _getNotificationColor(),
-                    size: 24,
-                  ),
+                Icon(
+                  _getNotificationIcon(),
+                  color: _getNotificationColor(),
+                  size: 28,
                 ),
-                
                 const SizedBox(width: 16),
-                
-                // Contenu
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,9 +254,7 @@ class _NotificationItem extends StatelessWidget {
                               notification.title,
                               style: TextStyle(
                                 fontSize: 15,
-                                fontWeight: notification.read
-                                    ? FontWeight.w500
-                                    : FontWeight.bold,
+                                fontWeight: notification.read ? FontWeight.w500 : FontWeight.w600,
                                 color: AppColors.textPrimary,
                               ),
                             ),
@@ -247,6 +263,7 @@ class _NotificationItem extends StatelessWidget {
                             Container(
                               width: 8,
                               height: 8,
+                              margin: const EdgeInsets.only(left: 8),
                               decoration: const BoxDecoration(
                                 color: AppColors.primary,
                                 shape: BoxShape.circle,
@@ -254,36 +271,25 @@ class _NotificationItem extends StatelessWidget {
                             ),
                         ],
                       ),
-                      
                       const SizedBox(height: 6),
-                      
                       Text(
                         notification.message,
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.grey[600],
+                          color: Colors.grey[700],
                           height: 1.4,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      
                       const SizedBox(height: 8),
-                      
                       Row(
                         children: [
-                          Icon(
-                            Icons.access_time,
-                            size: 14,
-                            color: Colors.grey[500],
-                          ),
+                          Icon(Icons.access_time, size: 14, color: Colors.grey[500]),
                           const SizedBox(width: 4),
                           Text(
                             _formatTime(notification.sentAt),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[500],
-                            ),
+                            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                           ),
                         ],
                       ),
@@ -301,28 +307,28 @@ class _NotificationItem extends StatelessWidget {
   IconData _getNotificationIcon() {
     switch (notification.notificationType) {
       case 'new_document':
-        return Icons.description;
+        return Icons.description_outlined;
       case 'new_quiz':
-        return Icons.quiz;
+        return Icons.quiz_outlined;
       case 'project_reminder':
-        return Icons.notification_important;
+        return Icons.notification_important_outlined;
       default:
-        return Icons.notifications;
+        return Icons.notifications_outlined;
     }
   }
 
   Color _getNotificationColor() {
     switch (notification.notificationType) {
-      case 'new_document':
+        case 'new_document':
         return Colors.blue;
-      case 'new_quiz':
-        return Colors.orange;
-      case 'project_reminder':
+        case 'new_quiz':
+        return Colors.orange; // ✅ CORRECTION : Colors.orange au lieu de Icons.orange
+        case 'project_reminder':
         return Colors.red;
-      default:
+        default:
         return AppColors.primary;
     }
-  }
+    }
 
   String _formatTime(DateTime dateTime) {
     final now = DateTime.now();
