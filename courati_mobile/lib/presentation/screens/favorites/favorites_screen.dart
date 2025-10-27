@@ -391,16 +391,24 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
     return RefreshIndicator(
       onRefresh: _loadFavoriteDocuments,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(20),
-        itemCount: _filteredDocuments.length,
-        itemBuilder: (context, index) {
-          final document = _filteredDocuments[index];
-          return Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            child: _buildDocumentCard(document, index),
-          );
-        },
+      child: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final document = _filteredDocuments[index];
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    child: _buildDocumentCard(document, index),
+                  );
+                },
+                childCount: _filteredDocuments.length,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

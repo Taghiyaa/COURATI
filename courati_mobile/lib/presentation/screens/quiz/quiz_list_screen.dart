@@ -359,7 +359,7 @@ class _QuizListScreenState extends State<QuizListScreen> {
 
   Widget _buildQuizCard(QuizModel quiz, int index) {
     final colors = [Colors.blue, Colors.green, Colors.orange, Colors.purple, Colors.teal];
-    final color = colors[index % colors.length];
+    final color = colors[(colors.length - 1 - index) % colors.length];
 
     return Container(
       decoration: BoxDecoration(

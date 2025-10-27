@@ -285,6 +285,11 @@ class _MainScreenState extends State<MainScreen> {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
     );
+    // ✨ NOUVEAU : Rafraîchir automatiquement si on retourne sur l'accueil
+    if (index == 0) {
+      print('🔄 Retour sur l\'accueil - Rafraîchissement...');
+      _refreshData();
+    }
   }
 
   List<SubjectModel> get _filteredSubjects {
@@ -967,7 +972,7 @@ Widget _buildCompactSubjectCard(SubjectModel subject, int index) {
     Colors.teal,
     Colors.indigo,
   ];
-  final cardColor = cardColors[index % cardColors.length];
+  final cardColor = cardColors[(cardColors.length - 1 - index) % cardColors.length];
 
   return Container(
     decoration: BoxDecoration(
@@ -1440,7 +1445,7 @@ Widget _buildCompactStatContainer(IconData icon, String value, String label, Col
       Colors.teal,
       Colors.indigo,
     ];
-    final cardColor = cardColors[index % cardColors.length];
+    final cardColor = cardColors[(cardColors.length - 1 - index) % cardColors.length];
 
     return Container(
       height: isHorizontal ? 180 : null,
