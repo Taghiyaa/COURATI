@@ -250,3 +250,32 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 
 print("✅ Firebase Admin SDK initialisé")
+
+# ========================================
+# CONFIGURATION CELERY
+# ========================================
+
+# URL du broker Redis
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+
+# URL du backend pour stocker les résultats
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+
+# Format de sérialisation
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+
+# Timezone
+CELERY_TIMEZONE = 'UTC'
+
+# Ne pas oublier les résultats des tâches
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes max par tâche
+
+# Ignorer les résultats par défaut (économise de la mémoire)
+CELERY_TASK_IGNORE_RESULT = False
+
+# Logging
+CELERY_WORKER_LOG_FORMAT = '[%(asctime)s: %(levelname)s/%(processName)s] %(message)s'
+CELERY_WORKER_TASK_LOG_FORMAT = '[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s'

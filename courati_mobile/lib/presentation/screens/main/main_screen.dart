@@ -797,96 +797,401 @@ Widget _buildInfoPill(IconData icon, String text) {
   );
 }
 
-  // Statistiques réelles depuis l'API
-  Widget _buildPersonalizedStats() {
-    // Récupération des vraies statistiques
-    final totalSubjects = _subjects.length;
-    final totalFavorites = _homeData['stats']?['total_favorites'] ?? 0;
-    final completionRate = _homeData['stats']?['completion_rate'] ?? 0;
-    
-    return SizedBox(
-      height: 95,
-      child: Row(
-        children: [
-          Expanded(child: _buildStatCard(
+// ============================================
+// 📊 SECTION STATISTIQUES - VERSION FINALE
+// ============================================
+
+/// Statistiques réelles depuis l'API
+Widget _buildPersonalizedStats() {
+  // Récupération des vraies statistiques
+  final totalSubjects = _subjects.length;
+  final totalFavorites = _homeData['stats']?['total_favorites'] ?? 0;
+  final completionRate = _homeData['stats']?['completion_rate'] ?? 0;
+  
+  // Données pour la progression détaillée
+  final viewedDocs = _homeData['stats']?['viewed_documents'] ?? 0;
+  final totalDocs = _homeData['stats']?['total_documents'] ?? 1;
+  
+  return SizedBox(
+    height: 95,
+    child: Row(
+      children: [
+        // Carte Matières
+        Expanded(
+          child: _buildStatCard(
             'Matières', 
             '$totalSubjects', 
             Icons.school, 
             Colors.blue
-          )),
-          const SizedBox(width: 8),
-          Expanded(child: _buildStatCard(
+          )
+        ),
+        const SizedBox(width: 8),
+        
+        // Carte Favoris
+        Expanded(
+          child: _buildStatCard(
             'Favoris', 
             '$totalFavorites', 
             Icons.favorite, 
             Colors.red
-          )),
-          const SizedBox(width: 8),
-          Expanded(child: _buildStatCard(
+          )
+        ),
+        const SizedBox(width: 8),
+        
+        // ✅ Carte Progression CLIQUABLE (sans IconButton)
+        Expanded(
+          child: _buildProgressStatCard(
             'Progression', 
             '$completionRate%', 
+            '$viewedDocs/$totalDocs',
             Icons.trending_up, 
             Colors.green
-          )),
-        ],
-      ),
-    );
-  }
+          )
+        ),
+        // ❌ IconButton supprimé
+      ],
+    ),
+  );
+}
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      height: 100,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
+/// Dialog d'explication de la progression
+void _showProgressExplanation() {
+  final viewedDocs = _homeData['stats']?['viewed_documents'] ?? 0;
+  final totalDocs = _homeData['stats']?['total_documents'] ?? 1;
+  final completionRate = _homeData['stats']?['completion_rate'] ?? 0;
+  
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      title: Row(
         children: [
           Container(
-            width: 28,
-            height: 28,
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
+              color: Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: color, size: 14),
-          ),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
+            child: const Icon(
+              Icons.trending_up,
+              color: Colors.green,
             ),
           ),
-          FittedBox(
-            fit: BoxFit.scaleDown,
+          const SizedBox(width: 12),
+          const Expanded(
             child: Text(
-              title,
-              style: const TextStyle(
-                fontSize: 9,
-                color: AppColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
+              'Progression Globale',
+              style: TextStyle(fontSize: 18),
             ),
           ),
         ],
       ),
-    );
-  }
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Votre progression représente le pourcentage de documents que vous avez consultés sur l\'ensemble de vos matières.',
+              style: TextStyle(fontSize: 15, height: 1.5),
+            ),
+            const SizedBox(height: 16),
+            
+            // Situation actuelle
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Votre situation actuelle :',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '• Documents consultés : $viewedDocs',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  Text(
+                    '• Total documents : $totalDocs',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '• Progression : $completionRate%',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Formule de calcul
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Formule de calcul :',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Documents consultés ÷ Total documents × 100',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade700,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 12),
+            
+            // Astuce
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.orange.withOpacity(0.3),
+                  width: 1,
+                ),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '💡',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Consultez plus de documents pour augmenter votre progression !',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontStyle: FontStyle.italic,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text(
+            'Compris !',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// ✅ Carte de progression CLIQUABLE - SANS OVERFLOW
+Widget _buildProgressStatCard(
+  String title, 
+  String value, 
+  String subtitle,
+  IconData icon, 
+  Color color
+) {
+  return Container(
+    height: 100,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.grey.withOpacity(0.1),
+          blurRadius: 10,
+          offset: const Offset(0, 5),
+        ),
+      ],
+    ),
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _showProgressExplanation,
+        borderRadius: BorderRadius.circular(16),
+        splashColor: color.withOpacity(0.2),      // ← Effet au clic
+        highlightColor: color.withOpacity(0.1),   // ← Effet au survol
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),  // ← Padding réduit
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,  // ← center au lieu de spaceEvenly
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icône
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 12),
+              ),
+              
+              const SizedBox(height: 3),  // ← Espacement réduit
+              
+              // Valeur principale (ex: "64.0%")
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                  height: 1.0,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+              ),
+              
+              const SizedBox(height: 1),  // ← Espacement minimal
+              
+              // Sous-titre (ex: "32/50")
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 7,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                  height: 1.0,
+                  letterSpacing: -0.2,  // ← Compacter le texte
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+              ),
+              
+              const SizedBox(height: 1),  // ← Espacement minimal
+              
+              // Titre (ex: "Progression")
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 8,
+                  color: AppColors.textSecondary,
+                  height: 1.0,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+              ),
+              
+              const SizedBox(height: 2),  // ← Espacement minimal
+              
+              // Indicateur de cliquabilité
+              Icon(
+                Icons.info_outline,
+                size: 9,
+                color: color.withOpacity(0.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Carte de statistique standard (inchangée)
+Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  return Container(
+    height: 100,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.grey.withOpacity(0.1),
+          blurRadius: 10,
+          offset: const Offset(0, 5),
+        ),
+      ],
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        // Icône
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: color, size: 14),
+        ),
+        
+        // Valeur
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ),
+        
+        // Titre
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 9,
+              color: AppColors.textSecondary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildRecommendedSubjects() {
   if (_recommendedSubjects.isEmpty) {

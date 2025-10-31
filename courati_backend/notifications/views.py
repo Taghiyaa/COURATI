@@ -288,16 +288,19 @@ class NotificationHistoryListView(APIView):
     """
     Liste des notifications reçues
     GET /api/notifications/history/
+    
+    ✅ LIMITÉ À 100 NOTIFICATIONS (les plus récentes)
+    ✅ Les anciennes sont supprimées automatiquement après 30 jours
     """
     permission_classes = [permissions.IsAuthenticated]
     
     def get(self, request):
         user = request.user
         
-        # Récupérer les notifications des 30 derniers jours
+        # ✅ RÉCUPÉRER SEULEMENT LES 50 DERNIÈRES
         notifications = NotificationHistory.objects.filter(
             user=user
-        ).order_by('-sent_at')[:100]
+        ).order_by('-sent_at')[:50]  # ← LIMITE ICI
         
         serializer = NotificationHistorySerializer(notifications, many=True)
         
@@ -309,7 +312,7 @@ class NotificationHistoryListView(APIView):
         
         return Response({
             'success': True,
-            'total': notifications.count(),
+            'count': len(serializer.data),
             'unread_count': unread_count,
             'notifications': serializer.data
         })
