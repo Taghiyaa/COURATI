@@ -164,35 +164,45 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
       return;
     }
 
+    // ✅ GESTION DES DOCUMENTS - SANS APPEL API SUPPLÉMENTAIRE
     if (type == 'new_document') {
-      final subjectId = notification.data!['subject_id'];
-      if (subjectId != null) {
-        final subjectIdInt = int.tryParse(subjectId.toString());
-        if (subjectIdInt != null && mounted) {
-          final subject = SubjectModel(
-            id: subjectIdInt,
-            name: '',
-            code: '',
-            credits: 0,
-            isFeatured: false,
-            levelNames: const [],
-            majorNames: const [],
-            documentCount: 0,
-            isFavorite: false,
-          );
-          
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => SubjectDetailScreen(
-                subject: subject,
-                accessToken: accessToken,
-              ),
+      final data = notification.data!;
+      
+      // ✅ RÉCUPÉRER LES INFOS DIRECTEMENT DEPUIS LA NOTIFICATION
+      final subjectId = int.tryParse(data['subject_id']?.toString() ?? '');
+      final subjectName = data['subject_name']?.toString() ?? '';
+      final subjectCode = data['subject_code']?.toString() ?? '';
+      final subjectCredits = int.tryParse(data['subject_credits']?.toString() ?? '0') ?? 0;
+      final subjectIsFeatured = data['subject_is_featured']?.toString().toLowerCase() == 'true';
+      
+      if (subjectId != null && mounted) {
+        // ✅ CRÉER SubjectModel AVEC LES DONNÉES DE LA NOTIFICATION
+        final subject = SubjectModel(
+          id: subjectId,
+          name: subjectName,
+          code: subjectCode,
+          credits: subjectCredits,
+          isFeatured: subjectIsFeatured,
+          levelNames: const [],
+          majorNames: const [],
+          documentCount: 0,
+          isFavorite: false,
+        );
+
+        // ✅ NAVIGUER DIRECTEMENT (instantané, pas d'attente)
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SubjectDetailScreen(
+              subject: subject,
+              accessToken: accessToken,
             ),
-          );
-        }
+          ),
+        );
       }
-    } else if (type == 'new_quiz') {
+    }
+    // ✅ GESTION DES QUIZ
+    else if (type == 'new_quiz') {
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -219,10 +229,19 @@ class _NotificationItem extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
+        // ✅ BORDER BLEU SI NON LU
+        border: notification.read 
+            ? null 
+            : Border.all(
+                color: AppColors.primary.withOpacity(0.3),
+                width: 2,
+              ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
+            color: notification.read
+                ? Colors.black.withOpacity(0.04)
+                : AppColors.primary.withOpacity(0.15), // ✅ OMBRE PLUS VISIBLE SI NON LU
+            blurRadius: notification.read ? 8 : 12,
             offset: const Offset(0, 2),
           ),
         ],
@@ -232,17 +251,81 @@ class _NotificationItem extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(12),
-          child: Padding(
+          child: Container(
+            // ✅ FOND LÉGÈREMENT COLORÉ SI NON LU
+            decoration: BoxDecoration(
+              color: notification.read 
+                  ? Colors.transparent 
+                  : AppColors.primary.withOpacity(0.03),
+              borderRadius: BorderRadius.circular(12),
+            ),
             padding: const EdgeInsets.all(16),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  _getNotificationIcon(),
-                  color: _getNotificationColor(),
-                  size: 28,
+                // ✅ ICÔNE AVEC BADGE SI NON LU
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: _getNotificationColor().withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _getNotificationColor().withOpacity(0.2),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Icon(
+                        _getNotificationIcon(),
+                        color: _getNotificationColor(),
+                        size: 24,
+                      ),
+                    ),
+                    // ✅ BADGE "NEW" SI NON LU
+                    if (!notification.read)
+                      Positioned(
+                        top: -4,
+                        right: -4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                AppColors.primary,
+                                AppColors.primary.withOpacity(0.8),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withOpacity(0.4),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Text(
+                            'NEW',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
+                
                 const SizedBox(width: 16),
+                
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -254,19 +337,55 @@ class _NotificationItem extends StatelessWidget {
                               notification.title,
                               style: TextStyle(
                                 fontSize: 15,
-                                fontWeight: notification.read ? FontWeight.w500 : FontWeight.w600,
-                                color: AppColors.textPrimary,
+                                fontWeight: notification.read 
+                                    ? FontWeight.w500 
+                                    : FontWeight.w700, // ✅ PLUS GRAS SI NON LU
+                                color: notification.read
+                                    ? AppColors.textPrimary
+                                    : AppColors.textPrimary,
                               ),
                             ),
                           ),
+                          // ✅ INDICATEUR ROND PLUS GRAND ET ANIMÉ
                           if (!notification.read)
                             Container(
-                              width: 8,
-                              height: 8,
                               margin: const EdgeInsets.only(left: 8),
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  // Cercle extérieur pulsant
+                                  Container(
+                                    width: 16,
+                                    height: 16,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withOpacity(0.2),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  // Cercle intérieur
+                                  Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          AppColors.primary,
+                                          AppColors.primary.withOpacity(0.8),
+                                        ],
+                                      ),
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: AppColors.primary.withOpacity(0.4),
+                                          blurRadius: 4,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                         ],
@@ -276,8 +395,13 @@ class _NotificationItem extends StatelessWidget {
                         notification.message,
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.grey[700],
+                          color: notification.read 
+                              ? Colors.grey[700] 
+                              : Colors.grey[800], // ✅ PLUS FONCÉ SI NON LU
                           height: 1.4,
+                          fontWeight: notification.read 
+                              ? FontWeight.normal 
+                              : FontWeight.w500,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -285,11 +409,25 @@ class _NotificationItem extends StatelessWidget {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          Icon(Icons.access_time, size: 14, color: Colors.grey[500]),
+                          Icon(
+                            Icons.access_time,
+                            size: 14,
+                            color: notification.read 
+                                ? Colors.grey[500] 
+                                : AppColors.primary.withOpacity(0.7),
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             _formatTime(notification.sentAt),
-                            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: notification.read 
+                                  ? Colors.grey[500] 
+                                  : AppColors.primary.withOpacity(0.8),
+                              fontWeight: notification.read 
+                                  ? FontWeight.normal 
+                                  : FontWeight.w600,
+                            ),
                           ),
                         ],
                       ),
@@ -319,16 +457,16 @@ class _NotificationItem extends StatelessWidget {
 
   Color _getNotificationColor() {
     switch (notification.notificationType) {
-        case 'new_document':
+      case 'new_document':
         return Colors.blue;
-        case 'new_quiz':
-        return Colors.orange; // ✅ CORRECTION : Colors.orange au lieu de Icons.orange
-        case 'project_reminder':
+      case 'new_quiz':
+        return Colors.orange;
+      case 'project_reminder':
         return Colors.red;
-        default:
+      default:
         return AppColors.primary;
     }
-    }
+  }
 
   String _formatTime(DateTime dateTime) {
     final now = DateTime.now();
@@ -347,3 +485,4 @@ class _NotificationItem extends StatelessWidget {
     }
   }
 }
+

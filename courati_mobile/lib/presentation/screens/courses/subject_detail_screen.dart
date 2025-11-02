@@ -516,7 +516,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
 
   Widget _buildModernAppBar(bool innerBoxIsScrolled) {
     return SliverAppBar(
-      expandedHeight: 280,
+      expandedHeight: 380,
       floating: false,
       pinned: true,
       backgroundColor: AppColors.primary,
@@ -600,6 +600,20 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
   }
 
   Widget _buildHeaderBackground() {
+    // ✅ NOUVEAU : Calculer la progression de cette matière
+    final viewedDocs = _allDocuments.where((doc) {
+      // Si vous avez un champ isViewed dans DocumentModel
+      // return doc.isViewed == true;
+      // Sinon, utiliser une autre logique (par exemple downloadCount > 0)
+      return doc.downloadCount != null && doc.downloadCount! > 0;
+    }).length;
+    
+    final totalDocs = _allDocuments.length;
+    final progressRate = totalDocs > 0 
+        ? ((viewedDocs / totalDocs) * 100).toStringAsFixed(1) 
+        : '0.0';
+    final isCompleted = totalDocs > 0 && viewedDocs == totalDocs;
+
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -659,13 +673,119 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                     widget.subject.name,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 28,
+                      fontSize: 23,
                       fontWeight: FontWeight.bold,
                       letterSpacing: -0.5,
                       height: 1.2,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // ✨ NOUVEAU : Section progression de la matière
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  isCompleted ? Icons.check_circle : Icons.trending_up,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  isCompleted ? 'Matière complétée !' : 'Votre progression',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.95),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isCompleted 
+                                    ? Colors.green.withOpacity(0.3)
+                                    : Colors.white.withOpacity(0.25),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.4),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isCompleted)
+                                    const Icon(
+                                      Icons.verified,
+                                      color: Colors.white,
+                                      size: 14,
+                                    ),
+                                  if (isCompleted) const SizedBox(width: 4),
+                                  Text(
+                                    '$progressRate%',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 12),
+                        
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: LinearProgressIndicator(
+                            value: totalDocs > 0 ? (viewedDocs / totalDocs) : 0.0,
+                            backgroundColor: Colors.white.withOpacity(0.2),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              isCompleted ? Colors.green : Colors.white
+                            ),
+                            minHeight: 8,
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 8),
+                        
+                        Text(
+                          isCompleted 
+                              ? 'Tous les documents ont été consultés 🎉'
+                              : '$viewedDocs/$totalDocs documents consultés',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.85),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   
                   const SizedBox(height: 16),

@@ -1024,7 +1024,7 @@ void _showProgressExplanation() {
   );
 }
 
-/// ✅ Carte de progression CLIQUABLE - SANS OVERFLOW
+/// ✅ Carte de progression CLIQUABLE - SANS icône info
 Widget _buildProgressStatCard(
   String title, 
   String value, 
@@ -1050,32 +1050,32 @@ Widget _buildProgressStatCard(
       child: InkWell(
         onTap: _showProgressExplanation,
         borderRadius: BorderRadius.circular(16),
-        splashColor: color.withOpacity(0.2),      // ← Effet au clic
-        highlightColor: color.withOpacity(0.1),   // ← Effet au survol
+        splashColor: color.withOpacity(0.2),
+        highlightColor: color.withOpacity(0.1),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),  // ← Padding réduit
+          padding: const EdgeInsets.all(10),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,  // ← center au lieu de spaceEvenly
+            mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
               // Icône
               Container(
-                width: 24,
-                height: 24,
+                width: 26,
+                height: 26,
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: color, size: 12),
+                child: Icon(icon, color: color, size: 13),
               ),
               
-              const SizedBox(height: 3),  // ← Espacement réduit
+              const SizedBox(height: 5),
               
               // Valeur principale (ex: "64.0%")
               Text(
                 value,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: color,
                   height: 1.0,
@@ -1084,30 +1084,29 @@ Widget _buildProgressStatCard(
                 overflow: TextOverflow.clip,
               ),
               
-              const SizedBox(height: 1),  // ← Espacement minimal
+              const SizedBox(height: 3),
               
-              // Sous-titre (ex: "32/50")
+              // Sous-titre (ex: "32/50 docs")
               Text(
                 subtitle,
                 style: TextStyle(
-                  fontSize: 7,
+                  fontSize: 8,
                   color: Colors.grey.shade600,
                   fontWeight: FontWeight.w500,
                   height: 1.0,
-                  letterSpacing: -0.2,  // ← Compacter le texte
                 ),
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.clip,
               ),
               
-              const SizedBox(height: 1),  // ← Espacement minimal
+              const SizedBox(height: 3),
               
               // Titre (ex: "Progression")
               Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 8,
+                  fontSize: 9,
                   color: AppColors.textSecondary,
                   height: 1.0,
                 ),
@@ -1115,15 +1114,7 @@ Widget _buildProgressStatCard(
                 maxLines: 1,
                 overflow: TextOverflow.clip,
               ),
-              
-              const SizedBox(height: 2),  // ← Espacement minimal
-              
-              // Indicateur de cliquabilité
-              Icon(
-                Icons.info_outline,
-                size: 9,
-                color: color.withOpacity(0.5),
-              ),
+            
             ],
           ),
         ),
