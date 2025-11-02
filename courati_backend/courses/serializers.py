@@ -204,6 +204,7 @@ class DocumentSerializer(serializers.ModelSerializer):
     is_favorite = serializers.SerializerMethodField()
     user_progress = serializers.SerializerMethodField()
     user_can_delete = serializers.SerializerMethodField()  # NOUVEAU
+    is_viewed = serializers.SerializerMethodField()
     
     class Meta:
         model = Document
@@ -213,7 +214,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             'file', 'file_url', 'file_size_mb', 'is_active', 'is_premium', 
             'download_count', 'view_count',
             'created_by', 'created_by_name', 'created_by_role',
-            'is_favorite', 'user_progress', 'user_can_delete',
+            'is_favorite', 'user_progress', 'user_can_delete', 'is_viewed',
             'order', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_by', 'download_count', 'view_count', 'created_at', 'updated_at']
@@ -251,6 +252,25 @@ class DocumentSerializer(serializers.ModelSerializer):
         
         from accounts.permissions import can_delete_document
         return can_delete_document(request.user, obj)
+
+    def get_is_viewed(self, obj):
+        """Vérifie si l'utilisateur a consulté ce document"""
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        
+        # Vérifier dans le contexte d'abord (optimisation)
+        user_viewed = self.context.get('user_viewed', set())
+        if user_viewed:
+            return obj.id in user_viewed
+        
+        # Sinon requête directe
+        from .models import UserProgress
+        return UserProgress.objects.filter(
+            user=request.user,
+            document=obj,
+            status__in=['IN_PROGRESS', 'COMPLETED']
+        ).exists()
 
 
 class TeacherSubjectSerializer(serializers.ModelSerializer):
@@ -485,6 +505,7 @@ class PersonalizedHomeSerializer(serializers.Serializer):
                 many=True
             ).data,
             'stats': instance['stats'],
+            'subject_progress': instance.get('subject_progress', {}),  # ✅ AJOUTER CETTE LIGNE
             'quick_actions': [
                 {
                     'title': 'Mes Cours',

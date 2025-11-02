@@ -673,6 +673,7 @@ class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
         isPremium: false,
         downloadCount: 0,
         isFavorite: consultation.document.isFavorite,
+        isViewed: true,  // ✅ AJOUTER CETTE LIGNE (déjà consulté dans l'historique)
         order: 0,
         uploadedAt: consultation.consultedAt,
       );

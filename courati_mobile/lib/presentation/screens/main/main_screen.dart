@@ -22,6 +22,8 @@ import '../../providers/notification_provider.dart';
 import '../notifications/notification_list_screen.dart';
 import '../../../services/notification_service.dart';
 import '../notifications/notification_preferences_screen.dart';
+import '../progress/progress_screen.dart';
+
 
 
 
@@ -2619,6 +2621,20 @@ Widget _buildBubbleNavItem(IconData inactiveIcon, IconData activeIcon, String la
                     );
                   },
                 ),
+
+                _buildModernDrawerItem(
+                icon: Icons.trending_up,
+                title: 'Ma Progression',
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ProgressScreen(),
+                    ),
+                  );
+                },
+              ),
 
                 _buildModernDrawerItem(
                 icon: Icons.notifications_outlined,

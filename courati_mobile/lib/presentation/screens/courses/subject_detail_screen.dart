@@ -601,12 +601,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
 
   Widget _buildHeaderBackground() {
     // ✅ NOUVEAU : Calculer la progression de cette matière
-    final viewedDocs = _allDocuments.where((doc) {
-      // Si vous avez un champ isViewed dans DocumentModel
-      // return doc.isViewed == true;
-      // Sinon, utiliser une autre logique (par exemple downloadCount > 0)
-      return doc.downloadCount != null && doc.downloadCount! > 0;
-    }).length;
+    final viewedDocs = _allDocuments.where((doc) => doc.isViewed == true).length;
     
     final totalDocs = _allDocuments.length;
     final progressRate = totalDocs > 0 
@@ -776,7 +771,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                         
                         Text(
                           isCompleted 
-                              ? 'Tous les documents ont été consultés 🎉'
+                              ? 'Tous les documents ont été consultés '
                               : '$viewedDocs/$totalDocs documents consultés',
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.85),

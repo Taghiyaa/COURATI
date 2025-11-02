@@ -162,13 +162,22 @@ class SubjectDocumentsView(APIView):
             if doc_type:
                 documents = documents.filter(document_type=doc_type)
             
-            # Récupérer les favoris et progression de l'utilisateur
+            # Récupérer les favoris de l'utilisateur
             user_doc_favorites = UserFavorite.objects.filter(
                 user=user,
                 favorite_type='DOCUMENT',
                 document__in=documents
             ).values_list('document_id', flat=True)
             
+            # ✅ AJOUTER : Récupérer les documents consultés
+            user_viewed_docs = UserProgress.objects.filter(
+                user=user,
+                subject=subject,
+                document__in=documents,
+                status__in=['IN_PROGRESS', 'COMPLETED']
+            ).values_list('document_id', flat=True)
+            
+            # Récupérer la progression
             user_progress = UserProgress.objects.filter(
                 user=user,
                 subject=subject,
@@ -177,10 +186,12 @@ class SubjectDocumentsView(APIView):
             
             progress_dict = {p['document_id']: p for p in user_progress}
             
+            # ✅ Sérialiser avec TOUS les contextes
             serializer = DocumentSerializer(documents, many=True, context={
                 'request': request,
                 'user_favorites': list(user_doc_favorites),
-                'user_progress': progress_dict
+                'user_progress': progress_dict,
+                'user_viewed': set(user_viewed_docs),  # ✅ LIGNE AJOUTÉE
             })
             
             return Response({

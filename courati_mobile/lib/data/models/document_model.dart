@@ -11,8 +11,9 @@ class DocumentModel {
   final bool isPremium;
   final int downloadCount;
   final bool isFavorite;
+  final bool isViewed;  // ✅ AJOUTÉ
   final int order;
-  final DateTime? uploadedAt; // AJOUT NÉCESSAIRE
+  final DateTime? uploadedAt;
 
   const DocumentModel({
     required this.id,
@@ -25,8 +26,9 @@ class DocumentModel {
     required this.isPremium,
     required this.downloadCount,
     required this.isFavorite,
+    required this.isViewed,  // ✅ AJOUTÉ
     required this.order,
-    this.uploadedAt, // AJOUT NÉCESSAIRE
+    this.uploadedAt,
   });
 
   factory DocumentModel.fromJson(Map<String, dynamic> json) {
@@ -41,8 +43,11 @@ class DocumentModel {
       isPremium: json['is_premium'] ?? false,
       downloadCount: json['download_count'] ?? 0,
       isFavorite: json['is_favorite'] ?? false,
+      isViewed: json['is_viewed'] ?? false,  // ✅ AJOUTÉ
       order: json['order'] ?? 0,
-      uploadedAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null, // AJOUT NÉCESSAIRE
+      uploadedAt: json['created_at'] != null 
+          ? DateTime.tryParse(json['created_at']) 
+          : null,
     );
   }
 
@@ -61,7 +66,7 @@ class DocumentModel {
     }
   }
 
-  // Nouvelle méthode pour formater la taille du fichier
+  // Méthode pour formater la taille du fichier
   String get fileSizeFormatted {
     if (fileSizeMb < 1) {
       return '${(fileSizeMb * 1024).toStringAsFixed(0)} KB';
@@ -85,8 +90,9 @@ class DocumentModel {
           isPremium == other.isPremium &&
           downloadCount == other.downloadCount &&
           isFavorite == other.isFavorite &&
+          isViewed == other.isViewed &&  // ✅ AJOUTÉ
           order == other.order &&
-          uploadedAt == other.uploadedAt; // AJOUT NÉCESSAIRE
+          uploadedAt == other.uploadedAt;
 
   @override
   int get hashCode =>
@@ -100,12 +106,13 @@ class DocumentModel {
       isPremium.hashCode ^
       downloadCount.hashCode ^
       isFavorite.hashCode ^
+      isViewed.hashCode ^  // ✅ AJOUTÉ
       order.hashCode ^
-      (uploadedAt?.hashCode ?? 0); // AJOUT NÉCESSAIRE
+      (uploadedAt?.hashCode ?? 0);
 
   @override
   String toString() {
-    return 'DocumentModel{id: $id, title: $title, documentType: $documentType, isFavorite: $isFavorite, uploadedAt: $uploadedAt}';
+    return 'DocumentModel{id: $id, title: $title, documentType: $documentType, isFavorite: $isFavorite, isViewed: $isViewed, uploadedAt: $uploadedAt}';  // ✅ MODIFIÉ
   }
 
   // Méthode pour copier avec modifications
@@ -120,8 +127,9 @@ class DocumentModel {
     bool? isPremium,
     int? downloadCount,
     bool? isFavorite,
+    bool? isViewed,  // ✅ AJOUTÉ
     int? order,
-    DateTime? uploadedAt, // AJOUT NÉCESSAIRE
+    DateTime? uploadedAt,
   }) {
     return DocumentModel(
       id: id ?? this.id,
@@ -134,8 +142,9 @@ class DocumentModel {
       isPremium: isPremium ?? this.isPremium,
       downloadCount: downloadCount ?? this.downloadCount,
       isFavorite: isFavorite ?? this.isFavorite,
+      isViewed: isViewed ?? this.isViewed,  // ✅ AJOUTÉ
       order: order ?? this.order,
-      uploadedAt: uploadedAt ?? this.uploadedAt, // AJOUT NÉCESSAIRE
+      uploadedAt: uploadedAt ?? this.uploadedAt,
     );
   }
 
@@ -151,8 +160,9 @@ class DocumentModel {
       'is_premium': isPremium,
       'download_count': downloadCount,
       'is_favorite': isFavorite,
+      'is_viewed': isViewed,  // ✅ AJOUTÉ
       'order': order,
-      'created_at': uploadedAt?.toIso8601String(), // AJOUT NÉCESSAIRE
+      'created_at': uploadedAt?.toIso8601String(),
     };
   }
 }

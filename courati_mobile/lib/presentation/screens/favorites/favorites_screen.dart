@@ -104,6 +104,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       isPremium: json['is_premium'] ?? false,
       downloadCount: json['download_count'] ?? 0,
       isFavorite: true,
+      isViewed: false,
       order: json['order'] ?? 0,
       uploadedAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
     );
