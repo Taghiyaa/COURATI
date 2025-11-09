@@ -24,6 +24,9 @@ urlpatterns = [
     path('choices/levels/', views.get_levels, name='get_levels'),
     path('choices/majors/', views.get_majors, name='get_majors'),
     path('choices/registration/', views.get_registration_choices, name='get_registration_choices'),
+    # APIs publiques web
+    path('levels/', views.get_levels, name='levels'),
+    path('majors/', views.get_majors, name='majors'),
     
     # Gestion admin des niveaux
     path('admin/levels/', views.LevelListCreateView.as_view(), name='admin_levels'),
@@ -32,4 +35,26 @@ urlpatterns = [
     # Gestion admin des filières
     path('admin/majors/', views.MajorListCreateView.as_view(), name='admin_majors'),
     path('admin/majors/<int:pk>/', views.MajorDetailView.as_view(), name='admin_major_detail'),
+
+    # ✅ AJOUTER : Gestion des matières (Admin)
+    path('admin/subjects/', views.AdminSubjectListCreateView.as_view(), name='admin-subjects'),
+    path('admin/subjects/<int:subject_id>/', views.AdminSubjectDetailView.as_view(), name='admin-subject-detail'),
+
+    # Gestion admin des professeurs
+    path('admin/teachers/', views.TeacherListCreateView.as_view(), name='admin_teachers'),
+    path('admin/teachers/<int:pk>/', views.TeacherDetailView.as_view(), name='admin_teacher_detail'),
+    path('admin/teachers/<int:teacher_id>/assignments/', views.TeacherAssignmentsView.as_view(), name='teacher_assignments'),
+    path('admin/assignments/<int:assignment_id>/', views.TeacherAssignmentDetailView.as_view(), name='assignment_detail'),
+    # Dashboard Admin
+    path('admin/dashboard/', views.AdminDashboardView.as_view(), name='admin_dashboard'),
+
+     # ========================================
+    # GESTION ÉTUDIANTS (ADMIN) 
+    # ========================================
+    path('admin/students/', views.AdminStudentListCreateView.as_view(), name='admin-students'),
+    path('admin/students/<int:student_id>/', views.AdminStudentDetailView.as_view(), name='admin-student-detail'),
+    path('admin/students/<int:student_id>/statistics/', views.AdminStudentStatisticsView.as_view(), name='admin-student-statistics'),
+    path('admin/students/<int:student_id>/toggle-active/', views.AdminStudentToggleActiveView.as_view(), name='admin-student-toggle-active'),
+    path('admin/students/bulk-action/', views.AdminStudentBulkActionView.as_view(), name='admin-students-bulk-action'),
+    path('admin/students/export/', views.AdminStudentExportView.as_view(), name='admin-students-export'),
 ]

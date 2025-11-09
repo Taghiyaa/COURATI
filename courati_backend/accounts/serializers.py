@@ -1,8 +1,15 @@
+import logging
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model, authenticate
 from django.utils.translation import gettext_lazy as _
+from django.db import models
 from .models import StudentProfile, AdminProfile, Level, Major
+from accounts.models import TeacherProfile, TeacherAssignment
+from courses.models import Subject
+from .permissions import IsAdminUser
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -393,3 +400,940 @@ def update(self, instance, validated_data):
         profile.save()
     
     return instance
+
+class TeacherAssignmentSerializer(serializers.ModelSerializer):
+    """Serializer pour les assignations professeur-matière"""
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+    subject_code = serializers.CharField(source='subject.code', read_only=True)
+    
+    class Meta:
+        model = TeacherAssignment
+        fields = [
+            'id',
+            'subject',
+            'subject_name',
+            'subject_code',
+            'can_edit_content',
+            'can_upload_documents',
+            'can_delete_documents',
+            'can_manage_students',
+            'is_active',
+            'assigned_date',
+            'notes'
+        ]
+        read_only_fields = ['id', 'assigned_date']
+
+
+class TeacherProfileDetailSerializer(serializers.ModelSerializer):
+    """Serializer détaillé pour le profil professeur"""
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+    full_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    last_name = serializers.CharField(source='user.last_name', read_only=True)
+    is_active = serializers.BooleanField(source='user.is_active', read_only=True)
+    assignments = TeacherAssignmentSerializer(source='user.teacher_assignments', many=True, read_only=True)
+    total_subjects = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = TeacherProfile
+        fields = [
+            'id',
+            'user_id',
+            'username',
+            'email',
+            'full_name',
+            'first_name',
+            'last_name',
+            'phone_number',
+            'specialization',
+            'bio',
+            'office',
+            'office_hours',
+            'is_active',
+            'assignments',
+            'total_subjects',
+            'created_at',
+            'updated_at'
+        ]
+    
+    def get_total_subjects(self, obj):
+        """Nombre de matières assignées"""
+        return TeacherAssignment.objects.filter(
+            teacher=obj.user,
+            is_active=True
+        ).count()
+
+
+class TeacherCreateSerializer(serializers.Serializer):
+    """Serializer pour créer un professeur avec assignations"""
+    # Informations utilisateur
+    username = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+    password = serializers.CharField(min_length=8, write_only=True)
+    first_name = serializers.CharField(max_length=30)
+    last_name = serializers.CharField(max_length=30)
+    
+    # Informations profil professeur
+    phone_number = serializers.CharField(max_length=15, required=False, allow_blank=True)
+    specialization = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    bio = serializers.CharField(required=False, allow_blank=True)
+    office = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    office_hours = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    
+    # Assignations de matières (liste d'objets)
+    subject_assignments = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        allow_empty=True,
+        help_text="Liste des matières à assigner avec permissions"
+    )
+    
+    def validate_username(self, value):
+        """Vérifier l'unicité du nom d'utilisateur"""
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("Ce nom d'utilisateur existe déjà.")
+        return value
+    
+    def validate_email(self, value):
+        """Vérifier l'unicité de l'email"""
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Cet email existe déjà.")
+        return value
+    
+    def validate_subject_assignments(self, value):
+        """
+        Valider les assignations de matières
+        Format attendu :
+        [
+            {
+                "subject_id": 1,
+                "can_edit_content": false,
+                "can_upload_documents": true,
+                "can_delete_documents": false,
+                "can_manage_students": true,
+                "notes": "Cours principal"
+            }
+        ]
+        """
+        for assignment in value:
+            if 'subject_id' not in assignment:
+                raise serializers.ValidationError(
+                    "Chaque assignation doit contenir 'subject_id'"
+                )
+            
+            # Vérifier que la matière existe
+            try:
+                Subject.objects.get(id=assignment['subject_id'], is_active=True)
+            except Subject.DoesNotExist:
+                raise serializers.ValidationError(
+                    f"Matière avec ID {assignment['subject_id']} non trouvée"
+                )
+        
+        return value
+    
+    def create(self, validated_data):
+        """Créer le professeur avec ses assignations"""
+        from django.db import transaction
+        
+        # Extraire les assignations
+        subject_assignments = validated_data.pop('subject_assignments', [])
+        
+        # Extraire les données du profil
+        phone_number = validated_data.pop('phone_number', '')
+        specialization = validated_data.pop('specialization', '')
+        bio = validated_data.pop('bio', '')
+        office = validated_data.pop('office', '')
+        office_hours = validated_data.pop('office_hours', '')
+        
+        # Extraire le mot de passe
+        password = validated_data.pop('password')
+        
+        with transaction.atomic():
+            # ✅ CORRECTION : Créer l'utilisateur professeur
+            user = User.objects.create(
+                username=validated_data['username'],
+                email=validated_data['email'],
+                first_name=validated_data['first_name'],
+                last_name=validated_data['last_name'],
+                role='TEACHER',
+                is_active=True
+            )
+            # Définir le mot de passe de manière sécurisée
+            user.set_password(password)
+            user.save()
+            
+            # ✅ CORRECTION : Utiliser get_or_create pour éviter les doublons
+            teacher_profile, created = TeacherProfile.objects.get_or_create(
+                user=user,
+                defaults={
+                    'phone_number': phone_number,
+                    'specialization': specialization,
+                    'bio': bio,
+                    'office': office,
+                    'office_hours': office_hours
+                }
+            )
+            
+            # Si le profil existait déjà, le mettre à jour
+            if not created:
+                teacher_profile.phone_number = phone_number
+                teacher_profile.specialization = specialization
+                teacher_profile.bio = bio
+                teacher_profile.office = office
+                teacher_profile.office_hours = office_hours
+                teacher_profile.save()
+            
+            # ✅ Créer les assignations de matières
+            assigned_by = None
+            if self.context.get('request'):
+                assigned_by = self.context['request'].user
+            
+            for assignment_data in subject_assignments:
+                subject = Subject.objects.get(id=assignment_data['subject_id'])
+                
+                # ✅ CORRECTION : Utiliser get_or_create pour éviter les doublons
+                TeacherAssignment.objects.get_or_create(
+                    teacher=user,
+                    subject=subject,
+                    defaults={
+                        'can_edit_content': assignment_data.get('can_edit_content', False),
+                        'can_upload_documents': assignment_data.get('can_upload_documents', True),
+                        'can_delete_documents': assignment_data.get('can_delete_documents', False),
+                        'can_manage_students': assignment_data.get('can_manage_students', True),
+                        'notes': assignment_data.get('notes', ''),
+                        'assigned_by': assigned_by,
+                        'is_active': True
+                    }
+                )
+            
+            logger.info(f"✅ Professeur créé: {user.username} avec {len(subject_assignments)} assignation(s)")
+            
+            return {
+                'user': user,
+                'teacher_profile': teacher_profile
+            }
+
+class TeacherUpdateSerializer(serializers.Serializer):
+    """Serializer pour mettre à jour un professeur"""
+    # Informations utilisateur
+    first_name = serializers.CharField(max_length=30, required=False)
+    last_name = serializers.CharField(max_length=30, required=False)
+    email = serializers.EmailField(required=False)
+    is_active = serializers.BooleanField(required=False)
+    
+    # Informations profil professeur
+    phone_number = serializers.CharField(max_length=15, required=False)
+    specialization = serializers.CharField(max_length=200, required=False)
+    bio = serializers.CharField(required=False)
+    office = serializers.CharField(max_length=50, required=False)
+    office_hours = serializers.CharField(max_length=200, required=False)
+    
+    def validate_email(self, value):
+        user_id = self.context.get('user_id')
+        if User.objects.filter(email=value).exclude(id=user_id).exists():
+            raise serializers.ValidationError("Cet email est déjà utilisé.")
+        return value
+    
+    def update(self, instance, validated_data):
+        """Mettre à jour l'utilisateur et son profil"""
+        user = instance
+        
+        # Mettre à jour l'utilisateur
+        user_fields = ['first_name', 'last_name', 'email', 'is_active']
+        for field in user_fields:
+            if field in validated_data:
+                setattr(user, field, validated_data[field])
+        user.save()
+        
+        # Mettre à jour le profil professeur
+        if hasattr(user, 'teacher_profile'):
+            profile = user.teacher_profile
+            profile_fields = ['phone_number', 'specialization', 'bio', 'office', 'office_hours']
+            
+            for field in profile_fields:
+                if field in validated_data:
+                    setattr(profile, field, validated_data[field])
+            profile.save()
+        
+        return user
+
+
+# ========================================
+# SERIALIZERS POUR LE DASHBOARD ADMIN
+# ========================================
+
+class DashboardStatsSerializer(serializers.Serializer):
+    """Serializer pour les statistiques globales du dashboard"""
+    
+    # Statistiques utilisateurs
+    total_users = serializers.IntegerField()
+    total_students = serializers.IntegerField()
+    total_teachers = serializers.IntegerField()
+    total_admins = serializers.IntegerField()
+    active_students = serializers.IntegerField()
+    active_teachers = serializers.IntegerField()
+    
+    # Statistiques académiques
+    total_subjects = serializers.IntegerField()
+    active_subjects = serializers.IntegerField()
+    total_levels = serializers.IntegerField()
+    total_majors = serializers.IntegerField()
+    
+    # Statistiques contenus
+    total_documents = serializers.IntegerField()
+    total_quizzes = serializers.IntegerField()
+    active_quizzes = serializers.IntegerField()
+    
+    # Activité récente (30 derniers jours)
+    new_students_30d = serializers.IntegerField()
+    new_documents_30d = serializers.IntegerField()
+    new_quizzes_30d = serializers.IntegerField()
+    total_views_30d = serializers.IntegerField()
+    total_downloads_30d = serializers.IntegerField()
+    quiz_attempts_30d = serializers.IntegerField()
+
+
+class StudentsByMajorSerializer(serializers.Serializer):
+    """Répartition des étudiants par filière"""
+    major_id = serializers.IntegerField()
+    major_name = serializers.CharField()
+    major_code = serializers.CharField()
+    student_count = serializers.IntegerField()
+    percentage = serializers.FloatField()
+
+
+class StudentsByLevelSerializer(serializers.Serializer):
+    """Répartition des étudiants par niveau"""
+    level_id = serializers.IntegerField()
+    level_name = serializers.CharField()
+    level_code = serializers.CharField()
+    student_count = serializers.IntegerField()
+    percentage = serializers.FloatField()
+
+
+class ActivityTimelineSerializer(serializers.Serializer):
+    """Activité sur une période"""
+    date = serializers.DateField()
+    new_students = serializers.IntegerField()
+    new_documents = serializers.IntegerField()
+    views = serializers.IntegerField()
+    downloads = serializers.IntegerField()
+    quiz_attempts = serializers.IntegerField()
+
+
+class TopSubjectSerializer(serializers.Serializer):
+    """Top matières par activité"""
+    subject_id = serializers.IntegerField()
+    subject_name = serializers.CharField()
+    subject_code = serializers.CharField()
+    document_count = serializers.IntegerField()
+    view_count = serializers.IntegerField()
+    download_count = serializers.IntegerField()
+
+
+class TopDocumentSerializer(serializers.Serializer):
+    """Top documents les plus consultés"""
+    document_id = serializers.IntegerField()
+    document_title = serializers.CharField()
+    subject_name = serializers.CharField()
+    document_type = serializers.CharField()
+    view_count = serializers.IntegerField()
+    download_count = serializers.IntegerField()
+
+
+class QuizPerformanceSerializer(serializers.Serializer):
+    """Performance globale des quiz"""
+    total_attempts = serializers.IntegerField()
+    completed_attempts = serializers.IntegerField()
+    average_score = serializers.FloatField()
+    pass_rate = serializers.FloatField()
+    
+    # Quiz les plus difficiles
+    hardest_quizzes = serializers.ListField()
+    # Quiz les plus faciles
+    easiest_quizzes = serializers.ListField()
+
+
+class RecentActivitySerializer(serializers.Serializer):
+    """Activités récentes"""
+    activity_type = serializers.CharField()  # 'new_student', 'new_document', 'new_quiz', etc.
+    title = serializers.CharField()
+    description = serializers.CharField()
+    user_name = serializers.CharField(required=False)
+    subject_name = serializers.CharField(required=False)
+    created_at = serializers.DateTimeField()
+    icon = serializers.CharField()
+    color = serializers.CharField()
+
+
+class SystemHealthSerializer(serializers.Serializer):
+    """État de santé du système"""
+    status = serializers.CharField()  # 'healthy', 'warning', 'critical'
+    total_storage_mb = serializers.FloatField()
+    active_users_today = serializers.IntegerField()
+    pending_assignments = serializers.IntegerField()
+    inactive_teachers = serializers.IntegerField()
+    subjects_without_content = serializers.IntegerField()
+    students_without_activity = serializers.IntegerField()
+
+
+class AdminDashboardSerializer(serializers.Serializer):
+    """Serializer complet pour le dashboard admin"""
+    stats = DashboardStatsSerializer()
+    students_by_major = StudentsByMajorSerializer(many=True)
+    students_by_level = StudentsByLevelSerializer(many=True)
+    activity_timeline = ActivityTimelineSerializer(many=True)
+    top_subjects = TopSubjectSerializer(many=True)
+    top_documents = TopDocumentSerializer(many=True)
+    quiz_performance = QuizPerformanceSerializer()
+    recent_activities = RecentActivitySerializer(many=True)
+    system_health = SystemHealthSerializer()
+
+# ========================================
+# SERIALIZERS POUR LA GESTION ADMIN DES ÉTUDIANTS
+# ========================================
+
+class StudentCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer pour créer un étudiant via l'admin
+    POST /api/auth/admin/students/
+    """
+    username = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, min_length=8)
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    
+    # Champs du profil StudentProfile (qui existent dans votre modèle)
+    level = serializers.PrimaryKeyRelatedField(
+        queryset=Level.objects.all(),
+        required=True
+    )
+    major = serializers.PrimaryKeyRelatedField(
+        queryset=Major.objects.all(),
+        required=True
+    )
+    phone_number = serializers.CharField(
+        max_length=20,
+        required=False,
+        allow_blank=True
+    )
+    
+    class Meta:
+        model = User
+        fields = [
+            'username', 'email', 'password',
+            'first_name', 'last_name',
+            'level', 'major', 'phone_number'
+        ]
+    
+    def validate_username(self, value):
+        """Vérifier l'unicité du nom d'utilisateur"""
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("Ce nom d'utilisateur existe déjà.")
+        return value
+    
+    def validate_email(self, value):
+        """Vérifier l'unicité de l'email"""
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Cet email est déjà utilisé.")
+        return value
+    
+    def create(self, validated_data):
+        """Créer l'utilisateur et son profil étudiant"""
+        # Extraire les champs du profil
+        level = validated_data.pop('level')
+        major = validated_data.pop('major')
+        phone_number = validated_data.pop('phone_number', '')
+        
+        # Extraire le mot de passe
+        password = validated_data.pop('password')
+        
+        # Créer l'utilisateur
+        user = User.objects.create(
+            **validated_data,
+            role='STUDENT',
+            is_active=True
+        )
+        user.set_password(password)
+        user.save()
+        
+        # Créer le profil étudiant
+        StudentProfile.objects.create(
+            user=user,
+            phone_number=phone_number,
+            level=level,
+            major=major,
+            is_verified=True  # Créé par admin = automatiquement vérifié
+        )
+        
+        logger.info(f"✅ Étudiant créé par admin: {user.username}")
+        return user
+
+
+class StudentUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour modifier un étudiant"""
+    
+    # Champs du User
+    first_name = serializers.CharField(max_length=150, required=False)
+    last_name = serializers.CharField(max_length=150, required=False)
+    email = serializers.EmailField(required=False)
+    is_active = serializers.BooleanField(required=False)
+    
+    # Champs du StudentProfile
+    level = serializers.PrimaryKeyRelatedField(
+        queryset=Level.objects.filter(is_active=True),
+        required=False
+    )
+    major = serializers.PrimaryKeyRelatedField(
+        queryset=Major.objects.filter(is_active=True),
+        required=False
+    )
+    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    student_id = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+    address = serializers.CharField(required=False, allow_blank=True)
+    emergency_contact = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    emergency_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    
+    class Meta:
+        model = User
+        fields = [
+            'first_name', 'last_name', 'email', 'is_active',
+            'level', 'major', 'phone_number', 'student_id', 'date_of_birth',
+            'address', 'emergency_contact', 'emergency_phone'
+        ]
+    
+    def validate_email(self, value):
+        """Vérifier l'unicité de l'email (sauf pour l'utilisateur actuel)"""
+        instance = self.instance
+        if User.objects.filter(email=value).exclude(id=instance.id).exists():
+            raise serializers.ValidationError("Cet email est déjà utilisé.")
+        return value
+    
+    def validate_student_id(self, value):
+        """Vérifier l'unicité du numéro étudiant"""
+        if value:
+            instance = self.instance
+            if StudentProfile.objects.filter(student_id=value).exclude(user=instance).exists():
+                raise serializers.ValidationError("Ce numéro étudiant existe déjà.")
+        return value
+    
+    def update(self, instance, validated_data):
+        """Mettre à jour l'utilisateur et son profil"""
+        # Extraire les champs du profil
+        profile_fields = [
+            'level', 'major', 'phone_number', 'student_id', 'date_of_birth',
+            'address', 'emergency_contact', 'emergency_phone'
+        ]
+        
+        profile_data = {}
+        for field in profile_fields:
+            if field in validated_data:
+                profile_data[field] = validated_data.pop(field)
+        
+        # Mettre à jour l'utilisateur
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Mettre à jour le profil
+        if profile_data:
+            profile = instance.student_profile
+            for attr, value in profile_data.items():
+                setattr(profile, attr, value)
+            profile.save()
+        
+        return instance
+
+
+class StudentAdminListSerializer(serializers.ModelSerializer):
+    """Serializer simple pour la liste des étudiants (Admin)"""
+    full_name = serializers.CharField(source='get_full_name', read_only=True)
+    level_name = serializers.CharField(source='student_profile.level.name', read_only=True)
+    major_name = serializers.CharField(source='student_profile.major.name', read_only=True)
+    student_id = serializers.CharField(source='student_profile.student_id', read_only=True)
+    phone_number = serializers.CharField(source='student_profile.phone_number', read_only=True)
+    
+    # Statistiques
+    total_documents_viewed = serializers.SerializerMethodField()
+    total_quiz_attempts = serializers.SerializerMethodField()
+    last_activity = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = [
+            'id',
+            'username',
+            'email',
+            'full_name',
+            'first_name',
+            'last_name',
+            'level_name',
+            'major_name',
+            'student_id',
+            'phone_number',
+            'is_active',
+            'date_joined',
+            'total_documents_viewed',
+            'total_quiz_attempts',
+            'last_activity'
+        ]
+    
+    def get_total_documents_viewed(self, obj):
+        """Nombre de documents consultés"""
+        from courses.models import UserActivity
+        return UserActivity.objects.filter(
+            user=obj,
+            action='view'
+        ).count()
+    
+    def get_total_quiz_attempts(self, obj):
+        """Nombre de tentatives de quiz"""
+        from courses.models import QuizAttempt
+        return QuizAttempt.objects.filter(user=obj).count()
+    
+    def get_last_activity(self, obj):
+        """Dernière activité"""
+        from courses.models import UserActivity
+        last = UserActivity.objects.filter(user=obj).order_by('-created_at').first()
+        return last.created_at if last else None
+
+
+class StudentAdminDetailSerializer(serializers.ModelSerializer):
+    """Serializer détaillé pour un étudiant (Admin)"""
+    full_name = serializers.CharField(source='get_full_name', read_only=True)
+    
+    # Profil
+    level = LevelSerializer(source='student_profile.level', read_only=True)
+    major = MajorSerializer(source='student_profile.major', read_only=True)
+    phone_number = serializers.CharField(source='student_profile.phone_number', read_only=True)
+    student_id = serializers.CharField(source='student_profile.student_id', read_only=True)
+    date_of_birth = serializers.DateField(source='student_profile.date_of_birth', read_only=True)
+    address = serializers.CharField(source='student_profile.address', read_only=True)
+    emergency_contact = serializers.CharField(source='student_profile.emergency_contact', read_only=True)
+    emergency_phone = serializers.CharField(source='student_profile.emergency_phone', read_only=True)
+    
+    # Statistiques détaillées
+    statistics = serializers.SerializerMethodField()
+    recent_activities = serializers.SerializerMethodField()
+    quiz_performance = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = [
+            'id',
+            'username',
+            'email',
+            'full_name',
+            'first_name',
+            'last_name',
+            'is_active',
+            'date_joined',
+            'last_login',
+            'level',
+            'major',
+            'phone_number',
+            'student_id',
+            'date_of_birth',
+            'address',
+            'emergency_contact',
+            'emergency_phone',
+            'statistics',
+            'recent_activities',
+            'quiz_performance'
+        ]
+    
+    def get_statistics(self, obj):
+        """Statistiques globales de l'étudiant"""
+        from courses.models import UserActivity, QuizAttempt, UserFavorite
+        from django.db.models import F
+        
+        # Documents
+        total_views = UserActivity.objects.filter(user=obj, action='view').count()
+        total_downloads = UserActivity.objects.filter(user=obj, action='download').count()
+        total_favorites = UserFavorite.objects.filter(user=obj).count()
+        
+        # Quiz
+        quiz_attempts = QuizAttempt.objects.filter(user=obj)
+        total_attempts = quiz_attempts.count()
+        completed_attempts = quiz_attempts.filter(status='COMPLETED').count()
+        
+        # Score moyen
+        avg_score = 0
+        if completed_attempts > 0:
+            scores = []
+            for attempt in quiz_attempts.filter(status='COMPLETED'):
+                if attempt.quiz.total_points > 0:
+                    normalized = (float(attempt.score) / float(attempt.quiz.total_points)) * 20
+                    scores.append(normalized)
+            
+            if scores:
+                avg_score = round(sum(scores) / len(scores), 2)
+        
+        # ✅ CORRECTION ICI : Utiliser passing_percentage
+        # Calculer le nombre de quiz réussis
+        passed = 0
+        for attempt in quiz_attempts.filter(status='COMPLETED'):
+            if attempt.quiz.total_points > 0:
+                # Calculer le pourcentage de réussite
+                percentage = (float(attempt.score) / float(attempt.quiz.total_points)) * 100
+                # Comparer avec le passing_percentage du quiz
+                if percentage >= attempt.quiz.passing_percentage:
+                    passed += 1
+        
+        pass_rate = round((passed / completed_attempts) * 100, 1) if completed_attempts > 0 else 0
+        
+        return {
+            'total_views': total_views,
+            'total_downloads': total_downloads,
+            'total_favorites': total_favorites,
+            'total_quiz_attempts': total_attempts,
+            'completed_quiz_attempts': completed_attempts,
+            'average_quiz_score': avg_score,
+            'quiz_pass_rate': pass_rate
+        }
+    
+    def get_recent_activities(self, obj):
+        """Activités récentes de l'étudiant"""
+        from courses.models import UserActivity
+        
+        activities = UserActivity.objects.filter(
+            user=obj
+        ).select_related('document', 'subject').order_by('-created_at')[:10]
+        
+        return [{
+            'id': a.id,
+            'action': a.action,
+            'document_title': a.document.title if a.document else None,
+            'subject_name': a.subject.name if a.subject else None,
+            'created_at': a.created_at
+        } for a in activities]
+    
+    def get_quiz_performance(self, obj):
+        """Performance aux quiz par matière"""
+        from courses.models import QuizAttempt, Subject
+        
+        # Récupérer les matières du niveau et de la filière de l'étudiant
+        subjects = Subject.objects.filter(
+            levels=obj.student_profile.level,
+            majors=obj.student_profile.major
+        ).distinct()
+        
+        performance = []
+        
+        for subject in subjects:
+            attempts = QuizAttempt.objects.filter(
+                user=obj,
+                quiz__subject=subject
+            )
+            
+            total = attempts.count()
+            if total == 0:
+                continue
+            
+            completed = attempts.filter(status='COMPLETED')
+            completed_count = completed.count()
+            
+            # Score moyen
+            avg_score = 0
+            if completed_count > 0:
+                scores = []
+                for attempt in completed:
+                    if attempt.quiz.total_points > 0:
+                        normalized = (float(attempt.score) / float(attempt.quiz.total_points)) * 20
+                        scores.append(normalized)
+                
+                if scores:
+                    avg_score = round(sum(scores) / len(scores), 2)
+            
+            # Taux de réussite
+            passed = completed.filter(score__gte=models.F('quiz__passing_score')).count()
+            pass_rate = round((passed / completed_count) * 100, 1) if completed_count > 0 else 0
+            
+            performance.append({
+                'subject_id': subject.id,
+                'subject_name': subject.name,
+                'subject_code': subject.code,
+                'total_attempts': total,
+                'completed_attempts': completed_count,
+                'average_score': avg_score,
+                'pass_rate': pass_rate
+            })
+        
+        return performance
+
+
+class StudentStatisticsSerializer(serializers.Serializer):
+    """Statistiques détaillées d'un étudiant"""
+    student_id = serializers.IntegerField()
+    student_name = serializers.CharField()
+    student_email = serializers.EmailField()
+    
+    # Activité
+    total_views = serializers.IntegerField()
+    total_downloads = serializers.IntegerField()
+    total_favorites = serializers.IntegerField()
+    last_activity = serializers.DateTimeField()
+    
+    # Quiz
+    total_quiz_attempts = serializers.IntegerField()
+    completed_quiz_attempts = serializers.IntegerField()
+    average_quiz_score = serializers.FloatField()
+    quiz_pass_rate = serializers.FloatField()
+    
+    # Par matière
+    performance_by_subject = serializers.ListField()
+
+
+class BulkStudentActionSerializer(serializers.Serializer):
+    """Serializer pour les actions en masse sur les étudiants"""
+    student_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        min_length=1
+    )
+    action = serializers.ChoiceField(choices=[
+        'activate',
+        'deactivate',
+        'delete',
+        'change_level',
+        'change_major'
+    ])
+    
+    # Champs optionnels selon l'action
+    new_level = serializers.PrimaryKeyRelatedField(
+        queryset=Level.objects.all(),
+        required=False
+    )
+    new_major = serializers.PrimaryKeyRelatedField(
+        queryset=Major.objects.all(),
+        required=False
+    )
+    
+    def validate(self, data):
+        """Validation selon l'action"""
+        action = data.get('action')
+        
+        if action == 'change_level' and 'new_level' not in data:
+            raise serializers.ValidationError({
+                'new_level': 'Le nouveau niveau est requis pour cette action'
+            })
+        
+        if action == 'change_major' and 'new_major' not in data:
+            raise serializers.ValidationError({
+                'new_major': 'La nouvelle filière est requise pour cette action'
+            })
+        
+        return data
+
+
+class SubjectAdminSerializer(serializers.ModelSerializer):
+    """Serializer pour afficher une matière (admin)"""
+    level = LevelSerializer(read_only=True)
+    major = MajorSerializer(read_only=True)
+    teacher = serializers.SerializerMethodField()
+    created_by = serializers.SerializerMethodField()
+    
+    class Meta:
+        from courses.models import Subject
+        model = Subject
+        fields = [
+            'id', 'code', 'name', 'description',
+            'level', 'major', 'teacher',
+            'credits', 'hours_per_week',
+            'is_active', 'created_at', 'updated_at',
+            'created_by'
+        ]
+    
+    def get_teacher(self, obj):
+        if obj.teacher:
+            return {
+                'id': obj.teacher.id,
+                'name': obj.teacher.get_full_name(),
+                'email': obj.teacher.email
+            }
+        return None
+    
+    def get_created_by(self, obj):
+        if obj.created_by:
+            return {
+                'id': obj.created_by.id,
+                'name': obj.created_by.get_full_name()
+            }
+        return None
+
+
+class SubjectCreateSerializer(serializers.Serializer):
+    """Serializer pour créer une matière"""
+    code = serializers.CharField(max_length=20)
+    name = serializers.CharField(max_length=200)
+    description = serializers.CharField(required=False, allow_blank=True)
+    level = serializers.PrimaryKeyRelatedField(
+        queryset=Level.objects.filter(is_active=True)
+    )
+    major = serializers.PrimaryKeyRelatedField(
+        queryset=Major.objects.filter(is_active=True)
+    )
+    teacher = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(role='TEACHER', is_active=True),
+        required=False,
+        allow_null=True
+    )
+    credits = serializers.IntegerField(required=False, default=3)
+    hours_per_week = serializers.IntegerField(required=False, default=2)
+    
+    def validate_code(self, value):
+        """Vérifier l'unicité du code"""
+        from courses.models import Subject
+        if Subject.objects.filter(code__iexact=value).exists():
+            raise serializers.ValidationError("Ce code de matière existe déjà.")
+        return value.upper()
+    
+    def create(self, validated_data):
+        """Créer la matière"""
+        from courses.models import Subject
+        
+        subject = Subject.objects.create(
+            code=validated_data['code'],
+            name=validated_data['name'],
+            description=validated_data.get('description', ''),
+            level=validated_data['level'],
+            major=validated_data['major'],
+            teacher=validated_data.get('teacher'),
+            credits=validated_data.get('credits', 3),
+            hours_per_week=validated_data.get('hours_per_week', 2),
+            created_by=self.context['request'].user,
+            is_active=True
+        )
+        
+        logger.info(f"✅ Matière créée: {subject.code} - {subject.name}")
+        return subject
+
+
+class SubjectUpdateSerializer(serializers.Serializer):
+    """Serializer pour modifier une matière"""
+    name = serializers.CharField(max_length=200, required=False)
+    description = serializers.CharField(required=False, allow_blank=True)
+    teacher = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(role='TEACHER', is_active=True),
+        required=False,
+        allow_null=True
+    )
+    credits = serializers.IntegerField(required=False)
+    hours_per_week = serializers.IntegerField(required=False)
+    is_active = serializers.BooleanField(required=False)
+    
+    def update(self, instance, validated_data):
+        """Mettre à jour la matière"""
+        instance.name = validated_data.get('name', instance.name)
+        instance.description = validated_data.get('description', instance.description)
+        instance.teacher = validated_data.get('teacher', instance.teacher)
+        instance.credits = validated_data.get('credits', instance.credits)
+        instance.hours_per_week = validated_data.get('hours_per_week', instance.hours_per_week)
+        instance.is_active = validated_data.get('is_active', instance.is_active)
+        instance.save()
+        
+        logger.info(f"✅ Matière mise à jour: {instance.code}")
+        return instance

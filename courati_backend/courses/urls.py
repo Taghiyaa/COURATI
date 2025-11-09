@@ -49,6 +49,30 @@ urlpatterns = [
     path('teacher/subjects/<int:subject_id>/upload/', views.TeacherUploadDocumentView.as_view(), name='teacher-upload-document'),
     path('teacher/subjects/<int:subject_id>/statistics/', views.TeacherSubjectStatisticsView.as_view(), name='teacher-subject-statistics'),
     path('teacher/documents/<int:document_id>/delete/', views.TeacherDeleteDocumentView.as_view(), name='teacher-delete-document'),
+
+    # NOUVEAU - APIs PROFESSEURS - Gestion des quiz
+    path('teacher/quizzes/', views.TeacherQuizListCreateView.as_view(), name='teacher-quizzes'),
+    path('teacher/quizzes/<int:quiz_id>/', views.TeacherQuizDetailView.as_view(), name='teacher-quiz-detail'),
+
+    # NOUVEAU - APIs PROFESSEURS 
+    path('teacher/dashboard/', views.TeacherDashboardView.as_view(), name='teacher-dashboard'),
+    path('teacher/quizzes/<int:quiz_id>/attempts/', views.TeacherQuizAttemptsView.as_view(), name='teacher-quiz-attempts'),
+    path('teacher/documents/<int:document_id>/update/', views.TeacherUpdateDocumentView.as_view(), name='teacher-update-document'),
+    path('teacher/subjects/<int:subject_id>/update/', views.TeacherUpdateSubjectView.as_view(), name='teacher-update-subject'),
+
+    # ========================================
+    # APIs ADMIN - Gestion des matières
+    # ========================================
+    path('admin/subjects/', views.AdminSubjectListCreateView.as_view(), name='admin-subjects'),
+    path('admin/subjects/<int:subject_id>/', views.AdminSubjectDetailView.as_view(), name='admin-subject-detail'),
+    path('admin/subjects/<int:subject_id>/statistics/', views.AdminSubjectStatisticsView.as_view(), name='admin-subject-stats'),
+    path('admin/subjects/<int:subject_id>/toggle-active/', views.AdminSubjectToggleActiveView.as_view(), name='admin-subject-toggle-active'),
+    path('admin/subjects/<int:subject_id>/toggle-featured/', views.AdminSubjectToggleFeaturedView.as_view(), name='admin-subject-toggle-featured'),
+
+    #  APIs ADMIN - Gestion des quiz
+    path('admin/quizzes/', views.AdminQuizListCreateView.as_view(), name='admin-quizzes'),
+    path('admin/quizzes/<int:quiz_id>/', views.AdminQuizDetailView.as_view(), name='admin-quiz-detail'),
+    path('admin/quizzes/<int:quiz_id>/toggle-active/', views.AdminQuizToggleActiveView.as_view(), name='admin-quiz-toggle-active'),
     
     # ========================================
     # APIs QUIZ & PROJETS - ViewSets

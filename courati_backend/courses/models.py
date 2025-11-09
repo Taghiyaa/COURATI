@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.core.validators import FileExtensionValidator, MaxValueValidator,MinValueValidator
 from accounts.models import Level, Major
 from django.utils.translation import gettext_lazy as _ 
+from django.db.models import Sum
 
 User = get_user_model()
 

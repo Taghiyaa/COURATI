@@ -686,3 +686,7 @@ class CanViewQuizStatistics(permissions.BasePermission):
             return False
         
         return can_view_quiz_statistics(request.user, obj)
+
+
+# Alias pour IsAdminPermission (utilisé dans les nouvelles vues)
+IsAdminPermission = IsAdminUser

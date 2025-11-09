@@ -1,4 +1,5 @@
 # courses/views.py
+
 import logging
 from django.db.models import Q, Count, Avg, Max, Sum
 from django.utils import timezone
@@ -24,18 +25,41 @@ from .serializers import (
     ConsultationSubjectSerializer, ConsultationHistoryResponseSerializer,
     PersonalizedHomeSerializer, TeacherSubjectSerializer,
     
-    # Nouveaux serializers Quiz
+    # Serializers Quiz étudiants
     QuizListSerializer, QuizDetailSerializer, QuizAttemptCreateSerializer,
     QuizAttemptSerializer, QuizSubmitSerializer, QuizResultSerializer,
     QuizCorrectionSerializer, QuizStatisticsSerializer,
 
-    # ✅ AJOUTER CES LIGNES - Serializers Projets
+    # Serializers Projets
     ProjectTaskSerializer,
     ProjectTaskCreateUpdateSerializer,
     ProjectTaskMoveSerializer,
     StudentProjectListSerializer,
     StudentProjectDetailSerializer,
-    ProjectStatisticsSerializer
+    ProjectStatisticsSerializer,
+    
+    # Serializers Admin Matières (Phase 2)
+    SubjectCreateUpdateSerializer,
+    SubjectAdminDetailSerializer,
+    SubjectAdminListSerializer,
+    SubjectStatisticsSerializer,
+    
+    # Serializers Quiz Admin/Professeur 
+    ChoiceCreateUpdateSerializer,
+    QuestionCreateUpdateSerializer,
+    QuestionWithAnswerSerializer,  
+    QuizCreateUpdateSerializer,
+    QuizAdminListSerializer,
+    QuizAdminDetailSerializer,
+
+    #  Serializers Professeur 
+    TeacherDashboardStatsSerializer,
+    TeacherSubjectPerformanceSerializer,
+    TeacherRecentActivitySerializer,
+    TeacherQuizAttemptListSerializer,
+    TeacherStudentProgressSerializer,
+    DocumentUpdateSerializer,
+    SubjectUpdateByTeacherSerializer
 )
 
 # Permissions personnalisées
@@ -43,7 +67,8 @@ from accounts.permissions import (
     IsTeacherUser, IsAdminOrTeacher, HasSubjectAccess,
     TeacherSubjectPermission, has_subject_access,
     can_upload_document, get_teacher_subjects,
-    can_manage_students, can_delete_document
+    can_manage_students, can_delete_document,
+    IsAdminPermission  
 )
 
 logger = logging.getLogger(__name__)
@@ -2041,6 +2066,1454 @@ class SubjectDetailAPIView(APIView):
         
         except Exception as e:
             logger.error(f"❌ Erreur détail matière {subject_id}: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========================================
+# GESTION DES MATIÈRES (ADMIN)
+# ========================================
+
+class AdminSubjectListCreateView(APIView):
+    """
+    Liste et création des matières (Admin uniquement)
+    GET /api/courses/admin/subjects/
+    POST /api/courses/admin/subjects/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request):
+        """Liste de toutes les matières avec filtres"""
+        logger.info(f"📚 Liste matières par admin: {request.user.username}")
+        
+        try:
+            # Récupérer toutes les matières
+            queryset = Subject.objects.all().prefetch_related('levels', 'majors')
+            
+            # Filtres
+            is_active = request.GET.get('is_active', None)
+            if is_active is not None:
+                queryset = queryset.filter(is_active=is_active.lower() == 'true')
+            
+            is_featured = request.GET.get('is_featured', None)
+            if is_featured is not None:
+                queryset = queryset.filter(is_featured=is_featured.lower() == 'true')
+            
+            # Recherche par nom ou code
+            search = request.GET.get('search', None)
+            if search:
+                queryset = queryset.filter(
+                    Q(name__icontains=search) | Q(code__icontains=search)
+                )
+            
+            # Filtrer par niveau
+            level_id = request.GET.get('level', None)
+            if level_id:
+                queryset = queryset.filter(levels__id=level_id)
+            
+            # Filtrer par filière
+            major_id = request.GET.get('major', None)
+            if major_id:
+                queryset = queryset.filter(majors__id=major_id)
+            
+            # Annoter avec statistiques
+            queryset = queryset.annotate(
+                total_documents=Count('documents', filter=Q(documents__is_active=True)),
+                total_quizzes=Count('quizzes', filter=Q(quizzes__is_active=True))
+            ).order_by('order', 'name')
+            
+            # Sérialiser
+            serializer = SubjectAdminListSerializer(queryset, many=True)
+            
+            return Response({
+                'success': True,
+                'total_subjects': queryset.count(),
+                'subjects': serializer.data,
+                'filters_applied': {
+                    'is_active': is_active,
+                    'is_featured': is_featured,
+                    'search': search,
+                    'level': level_id,
+                    'major': major_id
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur liste matières: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def post(self, request):
+        """Créer une nouvelle matière"""
+        logger.info(f"➕ Création matière par admin: {request.user.username}")
+        
+        serializer = SubjectCreateUpdateSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            try:
+                subject = serializer.save()
+                
+                # Retourner la matière créée avec détails
+                response_serializer = SubjectAdminDetailSerializer(subject)
+                
+                logger.info(f"✅ Matière créée: {subject.code} - {subject.name}")
+                
+                return Response({
+                    'success': True,
+                    'message': f'Matière "{subject.name}" créée avec succès',
+                    'subject': response_serializer.data
+                }, status=status.HTTP_201_CREATED)
+                
+            except Exception as e:
+                logger.error(f"❌ Erreur création matière: {str(e)}")
+                return Response({
+                    'success': False,
+                    'error': 'Erreur lors de la création',
+                    'details': str(e)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminSubjectDetailView(APIView):
+    """
+    Détail, modification et suppression d'une matière (Admin uniquement)
+    GET /api/courses/admin/subjects/{id}/
+    PUT/PATCH /api/courses/admin/subjects/{id}/
+    DELETE /api/courses/admin/subjects/{id}/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request, subject_id):
+        """Détail d'une matière"""
+        logger.info(f"📖 Détail matière {subject_id} par admin: {request.user.username}")
+        
+        try:
+            subject = Subject.objects.annotate(
+                total_documents=Count('documents', filter=Q(documents__is_active=True)),
+                total_quizzes=Count('quizzes', filter=Q(quizzes__is_active=True))
+            ).get(id=subject_id)
+            
+            serializer = SubjectAdminDetailSerializer(subject)
+            
+            return Response({
+                'success': True,
+                'subject': serializer.data
+            })
+            
+        except Subject.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Matière non trouvée'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ Erreur détail matière: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def put(self, request, subject_id):
+        """Mise à jour complète"""
+        return self.update_subject(request, subject_id, partial=False)
+    
+    def patch(self, request, subject_id):
+        """Mise à jour partielle"""
+        return self.update_subject(request, subject_id, partial=True)
+    
+    def update_subject(self, request, subject_id, partial=False):
+        """Logique de mise à jour"""
+        logger.info(f"✏️ Modification matière {subject_id} par admin: {request.user.username}")
+        
+        try:
+            subject = get_object_or_404(Subject, id=subject_id)
+            
+            serializer = SubjectCreateUpdateSerializer(
+                subject,
+                data=request.data,
+                partial=partial
+            )
+            
+            if serializer.is_valid():
+                serializer.save()
+                
+                # Retourner la matière mise à jour
+                response_serializer = SubjectAdminDetailSerializer(subject)
+                
+                logger.info(f"✅ Matière modifiée: {subject.code} - {subject.name}")
+                
+                return Response({
+                    'success': True,
+                    'message': 'Matière mise à jour avec succès',
+                    'subject': response_serializer.data
+                })
+            
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur modification matière: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def delete(self, request, subject_id):
+        """Supprimer une matière"""
+        logger.info(f"🗑️ Suppression matière {subject_id} par admin: {request.user.username}")
+        
+        try:
+            subject = get_object_or_404(Subject, id=subject_id)
+            
+            # Vérifier s'il y a des documents
+            document_count = Document.objects.filter(subject=subject).count()
+            if document_count > 0:
+                return Response({
+                    'success': False,
+                    'error': f'Impossible de supprimer cette matière. Elle contient {document_count} document(s).',
+                    'suggestion': 'Supprimez d\'abord tous les documents ou désactivez la matière'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Vérifier s'il y a des quiz
+            quiz_count = Quiz.objects.filter(subject=subject).count()
+            if quiz_count > 0:
+                return Response({
+                    'success': False,
+                    'error': f'Impossible de supprimer cette matière. Elle contient {quiz_count} quiz.',
+                    'suggestion': 'Supprimez d\'abord tous les quiz ou désactivez la matière'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Vérifier s'il y a des assignations
+            from accounts.models import TeacherAssignment
+            assignment_count = TeacherAssignment.objects.filter(subject=subject).count()
+            if assignment_count > 0:
+                return Response({
+                    'success': False,
+                    'error': f'Impossible de supprimer cette matière. Elle a {assignment_count} assignation(s) professeur.',
+                    'suggestion': 'Supprimez d\'abord les assignations ou désactivez la matière'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            subject_name = subject.name
+            subject_code = subject.code
+            subject.delete()
+            
+            logger.info(f"✅ Matière supprimée: {subject_code} - {subject_name}")
+            
+            return Response({
+                'success': True,
+                'message': f'Matière "{subject_name}" supprimée avec succès'
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur suppression matière: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminSubjectStatisticsView(APIView):
+    """
+    Statistiques détaillées d'une matière (Admin uniquement)
+    GET /api/courses/admin/subjects/{id}/statistics/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request, subject_id):
+        """Statistiques complètes d'une matière"""
+        logger.info(f"📊 Stats matière {subject_id} par admin: {request.user.username}")
+        
+        try:
+            subject = get_object_or_404(Subject, id=subject_id)
+            
+            # Documents
+            documents = Document.objects.filter(subject=subject)
+            total_documents = documents.count()
+            
+            documents_by_type = {}
+            for doc_type, doc_label in Document.DOCUMENT_TYPES:
+                count = documents.filter(document_type=doc_type).count()
+                documents_by_type[doc_label] = count
+            
+            # Top 5 documents les plus consultés
+            most_viewed = documents.filter(is_active=True).order_by('-view_count')[:5]
+            most_viewed_documents = [{
+                'id': doc.id,
+                'title': doc.title,
+                'type': doc.get_document_type_display(),
+                'views': doc.view_count,
+                'downloads': doc.download_count
+            } for doc in most_viewed]
+            
+            # Quiz
+            quizzes = Quiz.objects.filter(subject=subject)
+            total_quizzes = quizzes.count()
+            active_quizzes = quizzes.filter(is_active=True).count()
+            
+            # Score moyen des quiz
+            completed_attempts = QuizAttempt.objects.filter(
+                quiz__subject=subject,
+                status='COMPLETED'
+            )
+            avg_score = completed_attempts.aggregate(avg=Avg('score'))['avg'] or 0
+            
+            # Étudiants
+            from accounts.models import StudentProfile
+            total_students = StudentProfile.objects.filter(
+                level__in=subject.levels.all(),
+                major__in=subject.majors.all()
+            ).distinct().count()
+            
+            # Étudiants actifs (ayant consulté au moins 1 doc)
+            active_students = UserActivity.objects.filter(
+                subject=subject,
+                action__in=['view', 'download']
+            ).values('user').distinct().count()
+            
+            # Professeurs
+            from accounts.models import TeacherAssignment
+            total_teachers = TeacherAssignment.objects.filter(
+                subject=subject,
+                is_active=True
+            ).count()
+            
+            # Activité
+            total_views = UserActivity.objects.filter(
+                subject=subject,
+                action='view'
+            ).count()
+            
+            total_downloads = UserActivity.objects.filter(
+                subject=subject,
+                action='download'
+            ).count()
+            
+            # Activité des 30 derniers jours
+            from datetime import timedelta
+            thirty_days_ago = timezone.now() - timedelta(days=30)
+            views_last_30_days = UserActivity.objects.filter(
+                subject=subject,
+                action='view',
+                created_at__gte=thirty_days_ago
+            ).count()
+            
+            # Construire les stats
+            stats_data = {
+                'subject_id': subject.id,
+                'subject_name': subject.name,
+                'subject_code': subject.code,
+                'total_documents': total_documents,
+                'documents_by_type': documents_by_type,
+                'most_viewed_documents': most_viewed_documents,
+                'total_quizzes': total_quizzes,
+                'active_quizzes': active_quizzes,
+                'average_quiz_score': round(float(avg_score), 2),
+                'total_students': total_students,
+                'active_students': active_students,
+                'total_teachers': total_teachers,
+                'total_views': total_views,
+                'total_downloads': total_downloads,
+                'views_last_30_days': views_last_30_days
+            }
+            
+            serializer = SubjectStatisticsSerializer(stats_data)
+            
+            return Response({
+                'success': True,
+                'statistics': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur stats matière: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminSubjectToggleActiveView(APIView):
+    """
+    Activer/désactiver rapidement une matière
+    POST /api/courses/admin/subjects/{id}/toggle-active/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def post(self, request, subject_id):
+        """Toggle is_active"""
+        try:
+            subject = get_object_or_404(Subject, id=subject_id)
+            
+            subject.is_active = not subject.is_active
+            subject.save(update_fields=['is_active'])
+            
+            status_text = 'activée' if subject.is_active else 'désactivée'
+            logger.info(f"🔄 Matière {status_text}: {subject.code}")
+            
+            return Response({
+                'success': True,
+                'message': f'Matière "{subject.name}" {status_text}',
+                'is_active': subject.is_active
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur toggle matière: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminSubjectToggleFeaturedView(APIView):
+    """
+    Mettre en avant/retirer une matière
+    POST /api/courses/admin/subjects/{id}/toggle-featured/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def post(self, request, subject_id):
+        """Toggle is_featured"""
+        try:
+            subject = get_object_or_404(Subject, id=subject_id)
+            
+            subject.is_featured = not subject.is_featured
+            subject.save(update_fields=['is_featured'])
+            
+            status_text = 'mise en avant' if subject.is_featured else 'retirée de la mise en avant'
+            logger.info(f"⭐ Matière {status_text}: {subject.code}")
+            
+            return Response({
+                'success': True,
+                'message': f'Matière "{subject.name}" {status_text}',
+                'is_featured': subject.is_featured
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur toggle featured: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# ========================================
+# GESTION DES QUIZ (ADMIN)
+# ========================================
+
+class AdminQuizListCreateView(APIView):
+    """
+    Liste et création des quiz (Admin uniquement)
+    GET /api/courses/admin/quizzes/
+    POST /api/courses/admin/quizzes/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request):
+        """Liste de tous les quiz avec filtres"""
+        logger.info(f"📝 Liste quiz par admin: {request.user.username}")
+        
+        try:
+            # Récupérer tous les quiz
+            queryset = Quiz.objects.all().select_related('subject', 'created_by')
+            
+            # Filtres
+            is_active = request.GET.get('is_active', None)
+            if is_active is not None:
+                queryset = queryset.filter(is_active=is_active.lower() == 'true')
+            
+            # Filtrer par matière
+            subject_id = request.GET.get('subject', None)
+            if subject_id:
+                queryset = queryset.filter(subject_id=subject_id)
+            
+            # Recherche par titre
+            search = request.GET.get('search', None)
+            if search:
+                queryset = queryset.filter(title__icontains=search)
+            
+            # Annoter avec statistiques
+            queryset = queryset.annotate(
+                question_count=Count('questions'),
+                total_attempts=Count('attempts')
+            ).order_by('-created_at')
+            
+            # Sérialiser
+            serializer = QuizAdminListSerializer(queryset, many=True)
+            
+            return Response({
+                'success': True,
+                'total_quizzes': queryset.count(),
+                'quizzes': serializer.data,
+                'filters_applied': {
+                    'is_active': is_active,
+                    'subject': subject_id,
+                    'search': search
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur liste quiz: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def post(self, request):
+        """Créer un nouveau quiz"""
+        logger.info(f"➕ Création quiz par admin: {request.user.username}")
+        
+        serializer = QuizCreateUpdateSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            try:
+                quiz = serializer.save()
+                
+                # Retourner le quiz créé avec détails
+                response_serializer = QuizAdminDetailSerializer(quiz)
+                
+                logger.info(f"✅ Quiz créé: {quiz.title}")
+                
+                return Response({
+                    'success': True,
+                    'message': f'Quiz "{quiz.title}" créé avec succès',
+                    'quiz': response_serializer.data
+                }, status=status.HTTP_201_CREATED)
+                
+            except Exception as e:
+                logger.error(f"❌ Erreur création quiz: {str(e)}")
+                return Response({
+                    'success': False,
+                    'error': 'Erreur lors de la création',
+                    'details': str(e)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminQuizDetailView(APIView):
+    """
+    Détail, modification et suppression d'un quiz (Admin uniquement)
+    GET /api/courses/admin/quizzes/{id}/
+    PUT/PATCH /api/courses/admin/quizzes/{id}/
+    DELETE /api/courses/admin/quizzes/{id}/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request, quiz_id):
+        try:
+            quiz = Quiz.objects.annotate(
+                question_count=Count('questions')
+            ).get(id=quiz_id)
+            
+            serializer = QuizAdminDetailSerializer(quiz)
+            
+            return Response({
+                'success': True,
+                'quiz': serializer.data
+            })
+            
+        except Quiz.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Quiz non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ Erreur détail quiz: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def put(self, request, quiz_id):
+        """Mise à jour complète"""
+        return self.update_quiz(request, quiz_id, partial=False)
+    
+    def patch(self, request, quiz_id):
+        """Mise à jour partielle"""
+        return self.update_quiz(request, quiz_id, partial=True)
+    
+    def update_quiz(self, request, quiz_id, partial=False):
+        """Logique de mise à jour"""
+        logger.info(f"✏️ Modification quiz {quiz_id} par admin: {request.user.username}")
+        
+        try:
+            quiz = get_object_or_404(Quiz, id=quiz_id)
+            
+            serializer = QuizCreateUpdateSerializer(
+                quiz,
+                data=request.data,
+                partial=partial,
+                context={'request': request}
+            )
+            
+            if serializer.is_valid():
+                serializer.save()
+                
+                # Retourner le quiz mis à jour
+                response_serializer = QuizAdminDetailSerializer(quiz)
+                
+                logger.info(f"✅ Quiz modifié: {quiz.title}")
+                
+                return Response({
+                    'success': True,
+                    'message': 'Quiz mis à jour avec succès',
+                    'quiz': response_serializer.data
+                })
+            
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur modification quiz: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def delete(self, request, quiz_id):
+        """Supprimer un quiz"""
+        logger.info(f"🗑️ Suppression quiz {quiz_id} par admin: {request.user.username}")
+        
+        try:
+            quiz = get_object_or_404(Quiz, id=quiz_id)
+            
+            # Vérifier s'il y a des tentatives
+            attempt_count = QuizAttempt.objects.filter(quiz=quiz).count()
+            if attempt_count > 0:
+                return Response({
+                    'success': False,
+                    'error': f'Impossible de supprimer ce quiz. Il a {attempt_count} tentative(s).',
+                    'suggestion': 'Désactivez le quiz au lieu de le supprimer pour conserver l\'historique'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            quiz_title = quiz.title
+            quiz.delete()
+            
+            logger.info(f"✅ Quiz supprimé: {quiz_title}")
+            
+            return Response({
+                'success': True,
+                'message': f'Quiz "{quiz_title}" supprimé avec succès'
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur suppression quiz: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminQuizToggleActiveView(APIView):
+    """
+    Activer/désactiver un quiz
+    POST /api/courses/admin/quizzes/{id}/toggle-active/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def post(self, request, quiz_id):
+        """Toggle is_active"""
+        try:
+            quiz = get_object_or_404(Quiz, id=quiz_id)
+            
+            quiz.is_active = not quiz.is_active
+            quiz.save(update_fields=['is_active'])
+            
+            status_text = 'activé' if quiz.is_active else 'désactivé'
+            logger.info(f"🔄 Quiz {status_text}: {quiz.title}")
+            
+            return Response({
+                'success': True,
+                'message': f'Quiz "{quiz.title}" {status_text}',
+                'is_active': quiz.is_active
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur toggle quiz: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========================================
+# GESTION DES QUIZ (PROFESSEUR)
+# ========================================
+
+class TeacherQuizListCreateView(APIView):
+    """
+    Liste et création des quiz pour un professeur
+    GET /api/courses/teacher/quizzes/
+    POST /api/courses/teacher/quizzes/
+    """
+    permission_classes = [IsTeacherUser]
+    
+    def get(self, request):
+        """Liste des quiz du professeur"""
+        logger.info(f"📝 Liste quiz professeur: {request.user.username}")
+        
+        try:
+            # Récupérer les matières du professeur
+            teacher_subjects = get_teacher_subjects(request.user)
+            
+            # Récupérer les quiz de ces matières
+            queryset = Quiz.objects.filter(
+                subject__in=teacher_subjects
+            ).select_related('subject', 'created_by')
+            
+            # Filtres
+            is_active = request.GET.get('is_active', None)
+            if is_active is not None:
+                queryset = queryset.filter(is_active=is_active.lower() == 'true')
+            
+            subject_id = request.GET.get('subject', None)
+            if subject_id:
+                queryset = queryset.filter(subject_id=subject_id)
+            
+            search = request.GET.get('search', None)
+            if search:
+                queryset = queryset.filter(title__icontains=search)
+            
+            # Annoter
+            queryset = queryset.annotate(
+                question_count=Count('questions'),
+                total_attempts=Count('attempts')
+            ).order_by('-created_at')
+            
+            serializer = QuizAdminListSerializer(queryset, many=True)
+            
+            return Response({
+                'success': True,
+                'total_quizzes': queryset.count(),
+                'quizzes': serializer.data,
+                'my_subjects': [{
+                    'id': s.id,
+                    'name': s.name,
+                    'code': s.code
+                } for s in teacher_subjects]
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur liste quiz professeur: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def post(self, request):
+        """Créer un quiz pour une de ses matières"""
+        logger.info(f"➕ Création quiz par professeur: {request.user.username}")
+        
+        # Vérifier que la matière appartient au professeur
+        subject_id = request.data.get('subject')
+        if not subject_id:
+            return Response({
+                'success': False,
+                'error': 'La matière est requise'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            subject = Subject.objects.get(id=subject_id)
+            
+            # Vérifier l'accès
+            from accounts.permissions import can_create_quiz
+            if not can_create_quiz(request.user, subject):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas la permission de créer un quiz pour cette matière'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Créer le quiz
+            serializer = QuizCreateUpdateSerializer(
+                data=request.data,
+                context={'request': request}
+            )
+            
+            if serializer.is_valid():
+                quiz = serializer.save()
+                
+                response_serializer = QuizAdminDetailSerializer(quiz)
+                
+                logger.info(f"✅ Quiz créé par professeur: {quiz.title}")
+                
+                return Response({
+                    'success': True,
+                    'message': f'Quiz "{quiz.title}" créé avec succès',
+                    'quiz': response_serializer.data
+                }, status=status.HTTP_201_CREATED)
+            
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Subject.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Matière non trouvée'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ Erreur création quiz professeur: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class TeacherQuizDetailView(APIView):
+    """
+    Détail, modification et suppression d'un quiz par un professeur
+    GET /api/courses/teacher/quizzes/{id}/
+    PUT/PATCH /api/courses/teacher/quizzes/{id}/
+    DELETE /api/courses/teacher/quizzes/{id}/
+    """
+    permission_classes = [IsTeacherUser]
+    
+    def get(self, request, quiz_id):
+        """Détail d'un quiz"""
+        try:
+            quiz = Quiz.objects.annotate(
+                question_count=Count('questions')
+            ).get(id=quiz_id)
+            
+            # Vérifier l'accès
+            if not has_subject_access(request.user, quiz.subject):
+                return Response({
+                    'success': False,
+                    'error': 'Accès refusé'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            serializer = QuizAdminDetailSerializer(quiz)
+            
+            return Response({
+                'success': True,
+                'quiz': serializer.data
+            })
+            
+        except Quiz.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Quiz non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
+    
+    def put(self, request, quiz_id):
+        """Mise à jour complète"""
+        return self.update_quiz(request, quiz_id, partial=False)
+    
+    def patch(self, request, quiz_id):
+        """Mise à jour partielle"""
+        return self.update_quiz(request, quiz_id, partial=True)
+    
+    def update_quiz(self, request, quiz_id, partial=False):
+        """Mise à jour par professeur"""
+        try:
+            quiz = get_object_or_404(Quiz, id=quiz_id)
+            
+            # Vérifier la permission
+            from accounts.permissions import can_edit_quiz
+            if not can_edit_quiz(request.user, quiz):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas la permission de modifier ce quiz'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            serializer = QuizCreateUpdateSerializer(
+                quiz,
+                data=request.data,
+                partial=partial,
+                context={'request': request}
+            )
+            
+            if serializer.is_valid():
+                serializer.save()
+                
+                response_serializer = QuizAdminDetailSerializer(quiz)
+                
+                logger.info(f"✅ Quiz modifié par professeur: {quiz.title}")
+                
+                return Response({
+                    'success': True,
+                    'message': 'Quiz mis à jour avec succès',
+                    'quiz': response_serializer.data
+                })
+            
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur modification quiz: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def delete(self, request, quiz_id):
+        """Suppression par professeur"""
+        try:
+            quiz = get_object_or_404(Quiz, id=quiz_id)
+            
+            # Vérifier la permission
+            from accounts.permissions import can_delete_quiz
+            if not can_delete_quiz(request.user, quiz):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas la permission de supprimer ce quiz'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Vérifier les tentatives
+            attempt_count = QuizAttempt.objects.filter(quiz=quiz).count()
+            if attempt_count > 0:
+                return Response({
+                    'success': False,
+                    'error': f'Impossible de supprimer ce quiz. Il a {attempt_count} tentative(s).',
+                    'suggestion': 'Désactivez le quiz au lieu de le supprimer'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            quiz_title = quiz.title
+            quiz.delete()
+            
+            logger.info(f"✅ Quiz supprimé par professeur: {quiz_title}")
+            
+            return Response({
+                'success': True,
+                'message': f'Quiz "{quiz_title}" supprimé avec succès'
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur suppression quiz: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========================================
+# DASHBOARD PROFESSEUR
+# ========================================
+
+class TeacherDashboardView(APIView):
+    """
+    Dashboard personnalisé pour le professeur
+    GET /api/courses/teacher/dashboard/
+    """
+    permission_classes = [IsTeacherUser]
+    
+    def get(self, request):
+        """Récupérer les statistiques du professeur"""
+        logger.info(f"📊 Dashboard professeur: {request.user.username}")
+        
+        try:
+            # Dates
+            now = timezone.now()
+            week_ago = now - timedelta(days=7)
+            month_ago = now - timedelta(days=30)
+            
+            # Récupérer les matières du professeur
+            teacher_subjects = get_teacher_subjects(request.user)
+            subject_ids = [s.id for s in teacher_subjects]
+            
+            # =====================================
+            # 1. STATISTIQUES GÉNÉRALES
+            # =====================================
+            
+            total_subjects = teacher_subjects.count()
+            active_subjects = teacher_subjects.filter(is_active=True).count()
+            
+            # Documents
+            total_documents = Document.objects.filter(
+                subject__in=teacher_subjects
+            ).count()
+            
+            my_documents = Document.objects.filter(
+                subject__in=teacher_subjects,
+                created_by=request.user
+            ).count()
+            
+            documents_this_month = Document.objects.filter(
+                subject__in=teacher_subjects,
+                created_at__gte=month_ago
+            ).count()
+            
+            # Quiz
+            total_quizzes = Quiz.objects.filter(
+                subject__in=teacher_subjects
+            ).count()
+            
+            active_quizzes = Quiz.objects.filter(
+                subject__in=teacher_subjects,
+                is_active=True
+            ).count()
+            
+            quizzes_this_month = Quiz.objects.filter(
+                subject__in=teacher_subjects,
+                created_at__gte=month_ago
+            ).count()
+            
+            # Étudiants
+            from accounts.models import StudentProfile
+            student_profiles = StudentProfile.objects.filter(
+                level__in=Level.objects.filter(subjects__in=teacher_subjects).distinct(),
+                major__in=Major.objects.filter(subjects__in=teacher_subjects).distinct()
+            ).distinct()
+            
+            total_students = student_profiles.count()
+            
+            # Étudiants actifs (avec au moins 1 activité cette semaine)
+            active_students = UserActivity.objects.filter(
+                subject__in=teacher_subjects,
+                created_at__gte=week_ago
+            ).values('user').distinct().count()
+            
+            # Activité de la semaine
+            views_this_week = UserActivity.objects.filter(
+                subject__in=teacher_subjects,
+                action='view',
+                created_at__gte=week_ago
+            ).count()
+            
+            downloads_this_week = UserActivity.objects.filter(
+                subject__in=teacher_subjects,
+                action='download',
+                created_at__gte=week_ago
+            ).count()
+            
+            quiz_attempts_this_week = QuizAttempt.objects.filter(
+                quiz__subject__in=teacher_subjects,
+                started_at__gte=week_ago
+            ).count()
+            
+            stats_data = {
+                'total_subjects': total_subjects,
+                'active_subjects': active_subjects,
+                'total_documents': total_documents,
+                'my_documents': my_documents,
+                'documents_this_month': documents_this_month,
+                'total_quizzes': total_quizzes,
+                'active_quizzes': active_quizzes,
+                'quizzes_this_month': quizzes_this_month,
+                'total_students': total_students,
+                'active_students': active_students,
+                'views_this_week': views_this_week,
+                'downloads_this_week': downloads_this_week,
+                'quiz_attempts_this_week': quiz_attempts_this_week
+            }
+            
+            # =====================================
+            # 2. PERFORMANCE PAR MATIÈRE
+            # =====================================
+            
+            subject_performance = []
+            
+            for subject in teacher_subjects:
+                # Documents et quiz
+                doc_count = Document.objects.filter(subject=subject).count()
+                quiz_count = Quiz.objects.filter(subject=subject).count()
+                
+                # Étudiants
+                students = StudentProfile.objects.filter(
+                    level__in=subject.levels.all(),
+                    major__in=subject.majors.all()
+                ).distinct()
+                
+                student_count = students.count()
+                
+                # Étudiants actifs sur cette matière
+                active_on_subject = UserActivity.objects.filter(
+                    subject=subject,
+                    created_at__gte=week_ago
+                ).values('user').distinct().count()
+                
+                # Activité
+                total_views = UserActivity.objects.filter(
+                    subject=subject,
+                    action='view'
+                ).count()
+                
+                total_downloads = UserActivity.objects.filter(
+                    subject=subject,
+                    action='download'
+                ).count()
+                
+                quiz_attempts = QuizAttempt.objects.filter(
+                    quiz__subject=subject
+                ).count()
+                
+                # Performance quiz
+                completed = QuizAttempt.objects.filter(
+                    quiz__subject=subject,
+                    status='COMPLETED'
+                )
+                
+                avg_score = 0
+                pass_rate = 0
+                
+                if completed.exists():
+                    # Score moyen normalisé sur 20
+                    scores = []
+                    for attempt in completed:
+                        if attempt.quiz.total_points > 0:
+                            normalized = (float(attempt.score) / float(attempt.quiz.total_points)) * 20
+                            scores.append(normalized)
+                    
+                    if scores:
+                        avg_score = round(sum(scores) / len(scores), 2)
+                    
+                    # Taux de réussite
+                    passed = completed.filter(score__gte=F('quiz__passing_score')).count()
+                    pass_rate = round((passed / completed.count()) * 100, 1)
+                
+                subject_performance.append({
+                    'subject_id': subject.id,
+                    'subject_name': subject.name,
+                    'subject_code': subject.code,
+                    'document_count': doc_count,
+                    'quiz_count': quiz_count,
+                    'student_count': student_count,
+                    'active_students': active_on_subject,
+                    'total_views': total_views,
+                    'total_downloads': total_downloads,
+                    'quiz_attempts': quiz_attempts,
+                    'average_quiz_score': avg_score,
+                    'quiz_pass_rate': pass_rate
+                })
+            
+            # =====================================
+            # 3. ACTIVITÉS RÉCENTES
+            # =====================================
+            
+            recent_activities = []
+            
+            # Nouveaux documents du professeur
+            my_recent_docs = Document.objects.filter(
+                created_by=request.user,
+                subject__in=teacher_subjects
+            ).select_related('subject').order_by('-created_at')[:5]
+            
+            for doc in my_recent_docs:
+                recent_activities.append({
+                    'activity_type': 'document_created',
+                    'title': 'Document ajouté',
+                    'description': doc.title,
+                    'subject_name': doc.subject.name,
+                    'created_at': doc.created_at,
+                    'icon': 'description',
+                    'color': 'green'
+                })
+            
+            # Nouveaux quiz du professeur
+            my_recent_quizzes = Quiz.objects.filter(
+                created_by=request.user,
+                subject__in=teacher_subjects
+            ).select_related('subject').order_by('-created_at')[:5]
+            
+            for quiz in my_recent_quizzes:
+                recent_activities.append({
+                    'activity_type': 'quiz_created',
+                    'title': 'Quiz créé',
+                    'description': quiz.title,
+                    'subject_name': quiz.subject.name,
+                    'created_at': quiz.created_at,
+                    'icon': 'quiz',
+                    'color': 'purple'
+                })
+            
+            # Tentatives récentes de quiz
+            recent_attempts = QuizAttempt.objects.filter(
+                quiz__subject__in=teacher_subjects,
+                status='COMPLETED'
+            ).select_related('user', 'quiz', 'quiz__subject').order_by('-completed_at')[:5]
+            
+            for attempt in recent_attempts:
+                is_passed = attempt.score >= attempt.quiz.passing_score
+                recent_activities.append({
+                    'activity_type': 'quiz_attempt',
+                    'title': 'Quiz complété',
+                    'description': f'{attempt.user.get_full_name()} - {attempt.quiz.title}',
+                    'subject_name': attempt.quiz.subject.name,
+                    'student_name': attempt.user.get_full_name(),
+                    'created_at': attempt.completed_at,
+                    'icon': 'check_circle' if is_passed else 'cancel',
+                    'color': 'green' if is_passed else 'red'
+                })
+            
+            # Trier par date
+            recent_activities = sorted(
+                recent_activities,
+                key=lambda x: x['created_at'],
+                reverse=True
+            )[:15]
+            
+            # =====================================
+            # ASSEMBLAGE
+            # =====================================
+            
+            dashboard_data = {
+                'stats': stats_data,
+                'subject_performance': subject_performance,
+                'recent_activities': recent_activities
+            }
+            
+            return Response({
+                'success': True,
+                'dashboard': dashboard_data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur dashboard professeur: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========================================
+# GESTION DES TENTATIVES DE QUIZ (PROFESSEUR)
+# ========================================
+
+class TeacherQuizAttemptsView(APIView):
+    """
+    Liste des tentatives de quiz pour un professeur
+    GET /api/courses/teacher/quizzes/{quiz_id}/attempts/
+    """
+    permission_classes = [IsTeacherUser]
+    
+    def get(self, request, quiz_id):
+        """Liste des tentatives d'un quiz"""
+        logger.info(f"📝 Tentatives quiz {quiz_id} par prof: {request.user.username}")
+        
+        try:
+            quiz = get_object_or_404(Quiz, id=quiz_id)
+            
+            # Vérifier l'accès
+            if not has_subject_access(request.user, quiz.subject):
+                return Response({
+                    'success': False,
+                    'error': 'Accès refusé à cette matière'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Récupérer les tentatives
+            attempts = QuizAttempt.objects.filter(
+                quiz=quiz
+            ).select_related('user', 'quiz').order_by('-started_at')
+            
+            # Filtres
+            status_filter = request.GET.get('status', None)
+            if status_filter:
+                attempts = attempts.filter(status=status_filter)
+            
+            student_id = request.GET.get('student', None)
+            if student_id:
+                attempts = attempts.filter(user_id=student_id)
+            
+            serializer = TeacherQuizAttemptListSerializer(attempts, many=True)
+            
+            # Statistiques
+            total_attempts = attempts.count()
+            completed = attempts.filter(status='COMPLETED')
+            completed_count = completed.count()
+            
+            avg_score = 0
+            if completed_count > 0:
+                scores = []
+                for attempt in completed:
+                    if quiz.total_points > 0:
+                        normalized = (float(attempt.score) / float(quiz.total_points)) * 20
+                        scores.append(normalized)
+                
+                if scores:
+                    avg_score = round(sum(scores) / len(scores), 2)
+            
+            passed = completed.filter(score__gte=quiz.passing_score).count()
+            pass_rate = round((passed / completed_count) * 100, 1) if completed_count > 0 else 0
+            
+            return Response({
+                'success': True,
+                'quiz': {
+                    'id': quiz.id,
+                    'title': quiz.title,
+                    'total_points': float(quiz.total_points),
+                    'passing_score': float(quiz.passing_score)
+                },
+                'statistics': {
+                    'total_attempts': total_attempts,
+                    'completed_attempts': completed_count,
+                    'average_score': avg_score,
+                    'pass_rate': pass_rate
+                },
+                'attempts': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur tentatives quiz: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========================================
+# MODIFICATION DE DOCUMENTS (PROFESSEUR)
+# ========================================
+
+class TeacherUpdateDocumentView(APIView):
+    """
+    Modifier un document créé par le professeur
+    PATCH /api/courses/teacher/documents/{document_id}/
+    """
+    permission_classes = [IsTeacherUser]
+    
+    def patch(self, request, document_id):
+        """Modifier son propre document"""
+        logger.info(f"✏️ Modification document {document_id} par prof: {request.user.username}")
+        
+        try:
+            document = get_object_or_404(Document, id=document_id)
+            
+            # Vérifier que c'est son document
+            if document.created_by != request.user:
+                return Response({
+                    'success': False,
+                    'error': 'Vous ne pouvez modifier que vos propres documents'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Vérifier qu'il a toujours accès à la matière
+            if not has_subject_access(request.user, document.subject):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez plus accès à cette matière'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            serializer = DocumentUpdateSerializer(
+                document,
+                data=request.data,
+                partial=True,
+                context={'request': request}
+            )
+            
+            if serializer.is_valid():
+                serializer.save()
+                
+                logger.info(f"✅ Document modifié: {document.title}")
+                
+                # Retourner le document complet
+                response_serializer = DocumentSerializer(document)
+                
+                return Response({
+                    'success': True,
+                    'message': 'Document modifié avec succès',
+                    'document': response_serializer.data
+                })
+            
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur modification document: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========================================
+# MODIFICATION DE MATIÈRE (PROFESSEUR)
+# ========================================
+
+class TeacherUpdateSubjectView(APIView):
+    """
+    Modifier une matière (si permission can_edit_content)
+    PATCH /api/courses/teacher/subjects/{subject_id}/
+    """
+    permission_classes = [IsTeacherUser]
+    
+    def patch(self, request, subject_id):
+        """Modifier une matière"""
+        logger.info(f"✏️ Modification matière {subject_id} par prof: {request.user.username}")
+        
+        try:
+            subject = get_object_or_404(Subject, id=subject_id)
+            
+            # Vérifier la permission
+            from accounts.permissions import can_edit_subject_content
+            if not can_edit_subject_content(request.user, subject):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas la permission de modifier cette matière'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            serializer = SubjectUpdateByTeacherSerializer(
+                subject,
+                data=request.data,
+                partial=True,
+                context={'request': request}
+            )
+            
+            if serializer.is_valid():
+                serializer.save()
+                
+                logger.info(f"✅ Matière modifiée par prof: {subject.name}")
+                
+                return Response({
+                    'success': True,
+                    'message': 'Matière modifiée avec succès',
+                    'subject': {
+                        'id': subject.id,
+                        'name': subject.name,
+                        'code': subject.code,
+                        'description': subject.description,
+                        'is_featured': subject.is_featured
+                    }
+                })
+            
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur modification matière: {str(e)}")
             return Response({
                 'success': False,
                 'error': 'Erreur serveur',

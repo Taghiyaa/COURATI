@@ -6,6 +6,8 @@ from django.utils import timezone
 from django.core.cache import cache
 from django.contrib.auth import get_user_model
 from django.utils.translation import gettext_lazy as _
+from django.db.models import Count, Sum, Avg, Q, F
+from django.shortcuts import get_object_or_404
 
 from rest_framework import status, permissions, generics
 from rest_framework.views import APIView
@@ -16,6 +18,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
 from .models import StudentProfile, Level, Major
+from accounts.models import TeacherProfile, TeacherAssignment
 from .serializers import (
     CustomTokenObtainPairSerializer,
     RegisterSerializer,
@@ -25,8 +28,24 @@ from .serializers import (
     LevelSerializer,
     MajorSerializer,
     LevelSimpleSerializer,
-    MajorSimpleSerializer
+    MajorSimpleSerializer,
+    AdminDashboardSerializer
 )
+from courses.models import Subject, Document, Quiz, QuizAttempt, UserActivity,  UserFavorite
+from accounts.permissions import IsAdminPermission
+from accounts.serializers import (
+    TeacherProfileDetailSerializer,
+    TeacherCreateSerializer,
+    TeacherUpdateSerializer,
+    TeacherAssignmentSerializer,
+    StudentCreateSerializer,
+    StudentUpdateSerializer,
+    StudentAdminListSerializer,
+    StudentAdminDetailSerializer,
+    StudentStatisticsSerializer,
+    BulkStudentActionSerializer
+)
+
 
 # Import du service Email OTP
 try:
@@ -39,6 +58,63 @@ except ImportError as e:
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+# ========================================
+# APIS PUBLIQUES POUR LES CHOIX
+# ========================================
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def get_levels(request):
+    """API publique pour récupérer les niveaux actifs"""
+    levels = Level.objects.filter(is_active=True).order_by('order', 'code')
+    serializer = LevelSimpleSerializer(levels, many=True)
+    
+    return Response({
+        'success': True,
+        'count': len(serializer.data),
+        'levels': serializer.data
+    })
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def get_majors(request):
+    """API publique pour récupérer les filières actives"""
+    # Permettre de filtrer par département
+    department = request.GET.get('department', None)
+    majors = Major.objects.filter(is_active=True)
+    
+    if department:
+        majors = majors.filter(department__icontains=department)
+    
+    majors = majors.order_by('order', 'name')
+    serializer = MajorSimpleSerializer(majors, many=True)
+    
+    return Response({
+        'success': True,
+        'count': len(serializer.data),
+        'majors': serializer.data,
+        'filtered_by_department': department
+    })
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def get_registration_choices(request):
+    """API publique pour récupérer tous les choix nécessaires à l'inscription"""
+    levels = Level.objects.filter(is_active=True).order_by('order', 'code')
+    majors = Major.objects.filter(is_active=True).order_by('order', 'name')
+    
+    return Response({
+        'success': True,
+        'choices': {
+            'levels': LevelSimpleSerializer(levels, many=True).data,
+            'majors': MajorSimpleSerializer(majors, many=True).data
+        },
+        'counts': {
+            'levels': levels.count(),
+            'majors': majors.count()
+        }
+    })
 
 # PERMISSION PERSONNALISÉE
 class IsAdminPermission(permissions.BasePermission):
@@ -122,62 +198,7 @@ class MajorDetailView(generics.RetrieveUpdateDestroyAPIView):
         
         return super().destroy(request, *args, **kwargs)
 
-# ========================================
-# APIS PUBLIQUES POUR LES CHOIX
-# ========================================
 
-@api_view(['GET'])
-@permission_classes([permissions.AllowAny])
-def get_levels(request):
-    """API publique pour récupérer les niveaux actifs"""
-    levels = Level.objects.filter(is_active=True).order_by('order', 'code')
-    serializer = LevelSimpleSerializer(levels, many=True)
-    
-    return Response({
-        'success': True,
-        'count': len(serializer.data),
-        'levels': serializer.data
-    })
-
-@api_view(['GET'])
-@permission_classes([permissions.AllowAny])
-def get_majors(request):
-    """API publique pour récupérer les filières actives"""
-    # Permettre de filtrer par département
-    department = request.GET.get('department', None)
-    majors = Major.objects.filter(is_active=True)
-    
-    if department:
-        majors = majors.filter(department__icontains=department)
-    
-    majors = majors.order_by('order', 'name')
-    serializer = MajorSimpleSerializer(majors, many=True)
-    
-    return Response({
-        'success': True,
-        'count': len(serializer.data),
-        'majors': serializer.data,
-        'filtered_by_department': department
-    })
-
-@api_view(['GET'])
-@permission_classes([permissions.AllowAny])
-def get_registration_choices(request):
-    """API publique pour récupérer tous les choix nécessaires à l'inscription"""
-    levels = Level.objects.filter(is_active=True).order_by('order', 'code')
-    majors = Major.objects.filter(is_active=True).order_by('order', 'name')
-    
-    return Response({
-        'success': True,
-        'choices': {
-            'levels': LevelSimpleSerializer(levels, many=True).data,
-            'majors': MajorSimpleSerializer(majors, many=True).data
-        },
-        'counts': {
-            'levels': levels.count(),
-            'majors': majors.count()
-        }
-    })
 
 class RegisterView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -845,3 +866,1623 @@ class LogoutView(APIView):
                 'success': False,
                 'error': 'Erreur serveur lors de la déconnexion'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========================================
+# GESTION DES PROFESSEURS (ADMIN)
+# ========================================
+
+class TeacherListCreateView(generics.ListCreateAPIView):
+    """
+    Liste et création des professeurs (Admin uniquement)
+    GET /api/auth/admin/teachers/
+    POST /api/auth/admin/teachers/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get_queryset(self):
+        """Liste des professeurs avec filtres"""
+        queryset = User.objects.filter(role='TEACHER').select_related('teacher_profile')
+        
+        # Filtrer par statut
+        is_active = self.request.query_params.get('is_active', None)
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+        
+        # Recherche par nom
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(username__icontains=search) |
+                Q(email__icontains=search)
+            )
+        
+        return queryset.order_by('last_name', 'first_name')
+    
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return TeacherCreateSerializer
+        return TeacherProfileDetailSerializer
+    
+    def get(self, request, *args, **kwargs):
+        """Liste des professeurs"""
+        queryset = self.get_queryset()
+        
+        # Pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = TeacherProfileDetailSerializer(
+                [u.teacher_profile for u in page],
+                many=True
+            )
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = TeacherProfileDetailSerializer(
+            [u.teacher_profile for u in queryset],
+            many=True
+        )
+        
+        return Response({
+            'success': True,
+            'total_teachers': queryset.count(),
+            'teachers': serializer.data
+        })
+    
+    def post(self, request, *args, **kwargs):
+        """Créer un nouveau professeur avec assignations"""
+        logger.info(f"👨‍🏫 Création professeur par admin: {request.user.username}")
+        
+        serializer = TeacherCreateSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            try:
+                result = serializer.save()
+                user = result['user']
+                teacher_profile = result['teacher_profile']
+                
+                # Retourner le profil complet
+                response_serializer = TeacherProfileDetailSerializer(teacher_profile)
+                
+                logger.info(f"✅ Professeur créé: {user.username}")
+                
+                return Response({
+                    'success': True,
+                    'message': f'Professeur {user.get_full_name()} créé avec succès',
+                    'teacher': response_serializer.data
+                }, status=status.HTTP_201_CREATED)
+                
+            except Exception as e:
+                logger.error(f"❌ Erreur création professeur: {str(e)}")
+                return Response({
+                    'success': False,
+                    'error': 'Erreur lors de la création du professeur',
+                    'details': str(e)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TeacherDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Détail, modification et suppression d'un professeur (Admin uniquement)
+    GET /api/auth/admin/teachers/{id}/
+    PUT/PATCH /api/auth/admin/teachers/{id}/
+    DELETE /api/auth/admin/teachers/{id}/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get_queryset(self):
+        return User.objects.filter(role='TEACHER').select_related('teacher_profile')
+    
+    def get_object(self):
+        """Récupérer l'utilisateur professeur par ID"""
+        user_id = self.kwargs.get('pk')
+        return get_object_or_404(self.get_queryset(), id=user_id)
+    
+    def get(self, request, *args, **kwargs):
+        """Détail d'un professeur"""
+        user = self.get_object()
+        serializer = TeacherProfileDetailSerializer(user.teacher_profile)
+        
+        return Response({
+            'success': True,
+            'teacher': serializer.data
+        })
+    
+    def put(self, request, *args, **kwargs):
+        """Mise à jour complète"""
+        return self.update_teacher(request, partial=False)
+    
+    def patch(self, request, *args, **kwargs):
+        """Mise à jour partielle"""
+        return self.update_teacher(request, partial=True)
+    
+    def update_teacher(self, request, partial=False):
+        """Logique de mise à jour"""
+        user = self.get_object()
+        logger.info(f"✏️ Mise à jour professeur: {user.username}")
+        
+        serializer = TeacherUpdateSerializer(
+            user,
+            data=request.data,
+            partial=partial,
+            context={'user_id': user.id}
+        )
+        
+        if serializer.is_valid():
+            serializer.save()
+            
+            # Retourner le profil mis à jour
+            response_serializer = TeacherProfileDetailSerializer(user.teacher_profile)
+            
+            return Response({
+                'success': True,
+                'message': 'Professeur mis à jour avec succès',
+                'teacher': response_serializer.data
+            })
+        
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, *args, **kwargs):
+        """Supprimer un professeur"""
+        user = self.get_object()
+        username = user.username
+        full_name = user.get_full_name()
+        
+        # Vérifier s'il a des assignations actives
+        active_assignments = TeacherAssignment.objects.filter(
+            teacher=user,
+            is_active=True
+        ).count()
+        
+        if active_assignments > 0:
+            return Response({
+                'success': False,
+                'error': f'Impossible de supprimer ce professeur. Il a {active_assignments} assignation(s) active(s).',
+                'suggestion': 'Désactivez d\'abord ses assignations ou transférez-les à un autre professeur'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Supprimer l'utilisateur (cascade sur le profil)
+        user.delete()
+        
+        logger.info(f"🗑️ Professeur supprimé: {username}")
+        
+        return Response({
+            'success': True,
+            'message': f'Professeur {full_name} supprimé avec succès'
+        })
+
+
+class TeacherAssignmentsView(APIView):
+    """
+    Gestion des assignations d'un professeur
+    GET /api/auth/admin/teachers/{id}/assignments/
+    POST /api/auth/admin/teachers/{id}/assignments/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request, teacher_id):
+        """Liste des assignations d'un professeur"""
+        try:
+            teacher = get_object_or_404(User, id=teacher_id, role='TEACHER')
+            
+            assignments = TeacherAssignment.objects.filter(
+                teacher=teacher
+            ).select_related('subject').order_by('-is_active', 'subject__name')
+            
+            serializer = TeacherAssignmentSerializer(assignments, many=True)
+            
+            return Response({
+                'success': True,
+                'teacher': {
+                    'id': teacher.id,
+                    'full_name': teacher.get_full_name(),
+                    'email': teacher.email
+                },
+                'total_assignments': assignments.count(),
+                'active_assignments': assignments.filter(is_active=True).count(),
+                'assignments': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur assignations professeur: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def post(self, request, teacher_id):
+        """Ajouter une assignation"""
+        try:
+            teacher = get_object_or_404(User, id=teacher_id, role='TEACHER')
+            subject_id = request.data.get('subject_id')
+            
+            if not subject_id:
+                return Response({
+                    'success': False,
+                    'error': 'subject_id requis'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            subject = get_object_or_404(Subject, id=subject_id, is_active=True)
+            
+            # Vérifier si l'assignation existe déjà
+            existing = TeacherAssignment.objects.filter(
+                teacher=teacher,
+                subject=subject
+            ).first()
+            
+            if existing:
+                if existing.is_active:
+                    return Response({
+                        'success': False,
+                        'error': 'Ce professeur est déjà assigné à cette matière'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    # Réactiver l'assignation
+                    existing.is_active = True
+                    existing.save()
+                    serializer = TeacherAssignmentSerializer(existing)
+                    
+                    return Response({
+                        'success': True,
+                        'message': 'Assignation réactivée',
+                        'assignment': serializer.data
+                    })
+            
+            # Créer la nouvelle assignation
+            assignment = TeacherAssignment.objects.create(
+                teacher=teacher,
+                subject=subject,
+                can_edit_content=request.data.get('can_edit_content', False),
+                can_upload_documents=request.data.get('can_upload_documents', True),
+                can_delete_documents=request.data.get('can_delete_documents', False),
+                can_manage_students=request.data.get('can_manage_students', True),
+                notes=request.data.get('notes', ''),
+                assigned_by=request.user,
+                is_active=True
+            )
+            
+            serializer = TeacherAssignmentSerializer(assignment)
+            
+            logger.info(f"✅ Assignation créée: {teacher.username} → {subject.name}")
+            
+            return Response({
+                'success': True,
+                'message': f'{teacher.get_full_name()} assigné à {subject.name}',
+                'assignment': serializer.data
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur création assignation: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class TeacherAssignmentDetailView(APIView):
+    """
+    Modification et suppression d'une assignation
+    PUT/PATCH /api/auth/admin/assignments/{id}/
+    DELETE /api/auth/admin/assignments/{id}/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def put(self, request, assignment_id):
+        """Mettre à jour une assignation"""
+        try:
+            assignment = get_object_or_404(TeacherAssignment, id=assignment_id)
+            
+            # Mettre à jour les permissions
+            assignment.can_edit_content = request.data.get('can_edit_content', assignment.can_edit_content)
+            assignment.can_upload_documents = request.data.get('can_upload_documents', assignment.can_upload_documents)
+            assignment.can_delete_documents = request.data.get('can_delete_documents', assignment.can_delete_documents)
+            assignment.can_manage_students = request.data.get('can_manage_students', assignment.can_manage_students)
+            assignment.notes = request.data.get('notes', assignment.notes)
+            assignment.is_active = request.data.get('is_active', assignment.is_active)
+            assignment.save()
+            
+            serializer = TeacherAssignmentSerializer(assignment)
+            
+            logger.info(f"✏️ Assignation modifiée: {assignment}")
+            
+            return Response({
+                'success': True,
+                'message': 'Assignation mise à jour',
+                'assignment': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur modification assignation: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def delete(self, request, assignment_id):
+        """Supprimer une assignation"""
+        try:
+            assignment = get_object_or_404(TeacherAssignment, id=assignment_id)
+            teacher_name = assignment.teacher.get_full_name()
+            subject_name = assignment.subject.name
+            
+            assignment.delete()
+            
+            logger.info(f"🗑️ Assignation supprimée: {teacher_name} → {subject_name}")
+            
+            return Response({
+                'success': True,
+                'message': f'Assignation de {teacher_name} à {subject_name} supprimée'
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur suppression assignation: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========================================
+# DASHBOARD ADMIN
+# ========================================
+
+class AdminDashboardView(APIView):
+    """
+    Dashboard complet pour l'administrateur
+    GET /api/auth/admin/dashboard/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request):
+        """Récupérer toutes les statistiques du dashboard"""
+        logger.info(f"📊 Dashboard admin: {request.user.username}")
+        
+        try:
+            # Dates pour les calculs
+            now = timezone.now()
+            thirty_days_ago = now - timedelta(days=30)
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # =====================================
+            # 1. STATISTIQUES GÉNÉRALES
+            # =====================================
+            
+            total_users = User.objects.count()
+            total_students = User.objects.filter(role='STUDENT').count()
+            total_teachers = User.objects.filter(role='TEACHER').count()
+            total_admins = User.objects.filter(role='ADMIN').count()
+            
+            active_students = User.objects.filter(
+                role='STUDENT',
+                is_active=True
+            ).count()
+            
+            active_teachers = User.objects.filter(
+                role='TEACHER',
+                is_active=True
+            ).count()
+            
+            # Académique
+            total_subjects = Subject.objects.count()
+            active_subjects = Subject.objects.filter(is_active=True).count()
+            total_levels = Level.objects.count()
+            total_majors = Major.objects.count()
+            
+            # Contenus
+            total_documents = Document.objects.count()
+            total_quizzes = Quiz.objects.count()
+            active_quizzes = Quiz.objects.filter(is_active=True).count()
+            
+            # Activité 30 derniers jours
+            new_students_30d = User.objects.filter(
+                role='STUDENT',
+                date_joined__gte=thirty_days_ago
+            ).count()
+            
+            new_documents_30d = Document.objects.filter(
+                created_at__gte=thirty_days_ago
+            ).count()
+            
+            new_quizzes_30d = Quiz.objects.filter(
+                created_at__gte=thirty_days_ago
+            ).count()
+            
+            total_views_30d = UserActivity.objects.filter(
+                action='view',
+                created_at__gte=thirty_days_ago
+            ).count()
+            
+            total_downloads_30d = UserActivity.objects.filter(
+                action='download',
+                created_at__gte=thirty_days_ago
+            ).count()
+            
+            quiz_attempts_30d = QuizAttempt.objects.filter(
+                started_at__gte=thirty_days_ago
+            ).count()
+            
+            stats_data = {
+                'total_users': total_users,
+                'total_students': total_students,
+                'total_teachers': total_teachers,
+                'total_admins': total_admins,
+                'active_students': active_students,
+                'active_teachers': active_teachers,
+                'total_subjects': total_subjects,
+                'active_subjects': active_subjects,
+                'total_levels': total_levels,
+                'total_majors': total_majors,
+                'total_documents': total_documents,
+                'total_quizzes': total_quizzes,
+                'active_quizzes': active_quizzes,
+                'new_students_30d': new_students_30d,
+                'new_documents_30d': new_documents_30d,
+                'new_quizzes_30d': new_quizzes_30d,
+                'total_views_30d': total_views_30d,
+                'total_downloads_30d': total_downloads_30d,
+                'quiz_attempts_30d': quiz_attempts_30d
+            }
+            
+            # =====================================
+            # 2. RÉPARTITION PAR FILIÈRE
+            # =====================================
+            
+            students_by_major = []
+            total_with_major = StudentProfile.objects.exclude(major__isnull=True).count()
+            
+            if total_with_major > 0:
+                major_stats = StudentProfile.objects.values(
+                    'major__id', 'major__name', 'major__code'
+                ).annotate(
+                    count=Count('id')
+                ).order_by('-count')
+                
+                for stat in major_stats:
+                    if stat['major__id']:
+                        students_by_major.append({
+                            'major_id': stat['major__id'],
+                            'major_name': stat['major__name'],
+                            'major_code': stat['major__code'],
+                            'student_count': stat['count'],
+                            'percentage': round((stat['count'] / total_with_major) * 100, 1)
+                        })
+            
+            # =====================================
+            # 3. RÉPARTITION PAR NIVEAU
+            # =====================================
+            
+            students_by_level = []
+            total_with_level = StudentProfile.objects.exclude(level__isnull=True).count()
+            
+            if total_with_level > 0:
+                level_stats = StudentProfile.objects.values(
+                    'level__id', 'level__name', 'level__code'
+                ).annotate(
+                    count=Count('id')
+                ).order_by('level__order')
+                
+                for stat in level_stats:
+                    if stat['level__id']:
+                        students_by_level.append({
+                            'level_id': stat['level__id'],
+                            'level_name': stat['level__name'],
+                            'level_code': stat['level__code'],
+                            'student_count': stat['count'],
+                            'percentage': round((stat['count'] / total_with_level) * 100, 1)
+                        })
+            
+            # =====================================
+            # 4. CHRONOLOGIE D'ACTIVITÉ (7 derniers jours)
+            # =====================================
+            
+            activity_timeline = []
+            for i in range(6, -1, -1):
+                day = now - timedelta(days=i)
+                day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+                day_end = day_start + timedelta(days=1)
+                
+                activity_timeline.append({
+                    'date': day_start.date(),
+                    'new_students': User.objects.filter(
+                        role='STUDENT',
+                        date_joined__gte=day_start,
+                        date_joined__lt=day_end
+                    ).count(),
+                    'new_documents': Document.objects.filter(
+                        created_at__gte=day_start,
+                        created_at__lt=day_end
+                    ).count(),
+                    'views': UserActivity.objects.filter(
+                        action='view',
+                        created_at__gte=day_start,
+                        created_at__lt=day_end
+                    ).count(),
+                    'downloads': UserActivity.objects.filter(
+                        action='download',
+                        created_at__gte=day_start,
+                        created_at__lt=day_end
+                    ).count(),
+                    'quiz_attempts': QuizAttempt.objects.filter(
+                        started_at__gte=day_start,
+                        started_at__lt=day_end
+                    ).count()
+                })
+            
+            # =====================================
+            # 5. TOP MATIÈRES
+            # =====================================
+            
+            top_subjects_data = Subject.objects.annotate(
+                document_count=Count('documents', filter=Q(documents__is_active=True)),
+                view_count=Count('activities', filter=Q(activities__action='view')),
+                download_count=Count('activities', filter=Q(activities__action='download'))
+            ).order_by('-view_count')[:5]
+            
+            top_subjects = [{
+                'subject_id': s.id,
+                'subject_name': s.name,
+                'subject_code': s.code,
+                'document_count': s.document_count,
+                'view_count': s.view_count,
+                'download_count': s.download_count
+            } for s in top_subjects_data]
+            
+            # =====================================
+            # 6. TOP DOCUMENTS
+            # =====================================
+            
+            top_documents_data = Document.objects.select_related('subject').filter(
+                is_active=True
+            ).order_by('-view_count')[:10]
+            
+            top_documents = [{
+                'document_id': d.id,
+                'document_title': d.title,
+                'subject_name': d.subject.name,
+                'document_type': d.get_document_type_display(),
+                'view_count': d.view_count,
+                'download_count': d.download_count
+            } for d in top_documents_data]
+            
+            # =====================================
+            # 7. PERFORMANCE DES QUIZ
+            # =====================================
+            
+            total_attempts = QuizAttempt.objects.count()
+            completed_attempts = QuizAttempt.objects.filter(status='COMPLETED').count()
+            
+            avg_score_data = QuizAttempt.objects.filter(
+                status='COMPLETED'
+            ).select_related('quiz')
+
+            average_score = 0
+            if avg_score_data.exists():
+                scores = []
+                for attempt in avg_score_data:
+                    total = attempt.quiz.total_points  # ✅ Utiliser la propriété
+                    if total > 0:
+                        normalized = (float(attempt.score) / float(total)) * 20
+                        scores.append(normalized)
+                
+                if scores:
+                    average_score = round(sum(scores) / len(scores), 2)
+            
+            
+            
+            # Taux de réussite global
+            completed = QuizAttempt.objects.filter(status='COMPLETED').select_related('quiz')
+
+            passed = 0
+            for attempt in completed:
+                if attempt.score >= attempt.quiz.passing_score:
+                    passed += 1
+
+            pass_rate = 0
+            if completed.count() > 0:
+                pass_rate = round((passed / completed.count()) * 100, 1)
+            
+            # Quiz les plus difficiles (taux de réussite le plus bas)
+            hardest_quizzes = []
+            quizzes_with_attempts = Quiz.objects.annotate(
+                attempt_count=Count('attempts', filter=Q(attempts__status='COMPLETED'))
+            ).filter(attempt_count__gte=3)  # Au moins 3 tentatives
+
+            for quiz in quizzes_with_attempts:
+                # Récupérer toutes les tentatives complétées
+                completed_quiz_attempts = QuizAttempt.objects.filter(
+                    quiz=quiz,
+                    status='COMPLETED'
+                )
+                
+                completed_count = completed_quiz_attempts.count()
+                
+                if completed_count > 0:
+                    # Compter manuellement les tentatives réussies
+                    passed_quiz = 0
+                    for attempt in completed_quiz_attempts:
+                        if attempt.score >= quiz.passing_score:  # ✅ Utiliser dans Python, pas dans filter()
+                            passed_quiz += 1
+                    
+                    quiz_pass_rate = (passed_quiz / completed_count) * 100
+                    
+                    hardest_quizzes.append({
+                        'quiz_id': quiz.id,
+                        'title': quiz.title,
+                        'subject': quiz.subject.name,
+                        'attempts': completed_count,
+                        'pass_rate': round(quiz_pass_rate, 1)
+                    })
+
+            # Trier pour obtenir les 5 plus difficiles
+            hardest_quizzes = sorted(hardest_quizzes, key=lambda x: x['pass_rate'])[:5]
+            
+            # Quiz les plus faciles
+            easiest_quizzes = sorted(
+                [q for q in hardest_quizzes if q['pass_rate'] > 0],
+                key=lambda x: x['pass_rate'],
+                reverse=True
+            )[:5]
+            
+            quiz_performance = {
+                'total_attempts': total_attempts,
+                'completed_attempts': completed_attempts,
+                'average_score': average_score,
+                'pass_rate': pass_rate,
+                'hardest_quizzes': hardest_quizzes,
+                'easiest_quizzes': easiest_quizzes
+            }
+            
+            # =====================================
+            # 8. ACTIVITÉS RÉCENTES
+            # =====================================
+            
+            recent_activities = []
+            
+            # Nouveaux étudiants (5 derniers)
+            new_students = User.objects.filter(
+                role='STUDENT'
+            ).order_by('-date_joined')[:5]
+            
+            for student in new_students:
+                recent_activities.append({
+                    'activity_type': 'new_student',
+                    'title': 'Nouvel étudiant',
+                    'description': f'{student.get_full_name()} s\'est inscrit',
+                    'user_name': student.get_full_name(),
+                    'created_at': student.date_joined,
+                    'icon': 'person_add',
+                    'color': 'blue'
+                })
+            
+            # Nouveaux documents (5 derniers)
+            new_docs = Document.objects.select_related('subject', 'created_by').order_by('-created_at')[:5]
+            
+            for doc in new_docs:
+                recent_activities.append({
+                    'activity_type': 'new_document',
+                    'title': 'Nouveau document',
+                    'description': f'{doc.title}',
+                    'subject_name': doc.subject.name,
+                    'user_name': doc.created_by.get_full_name() if doc.created_by else 'Système',
+                    'created_at': doc.created_at,
+                    'icon': 'description',
+                    'color': 'green'
+                })
+            
+            # Nouveaux quiz (5 derniers)
+            new_quiz = Quiz.objects.select_related('subject', 'created_by').order_by('-created_at')[:5]
+            
+            for quiz in new_quiz:
+                recent_activities.append({
+                    'activity_type': 'new_quiz',
+                    'title': 'Nouveau quiz',
+                    'description': f'{quiz.title}',
+                    'subject_name': quiz.subject.name,
+                    'user_name': quiz.created_by.get_full_name() if quiz.created_by else 'Système',
+                    'created_at': quiz.created_at,
+                    'icon': 'quiz',
+                    'color': 'purple'
+                })
+            
+            # Trier par date
+            recent_activities = sorted(
+                recent_activities,
+                key=lambda x: x['created_at'],
+                reverse=True
+            )[:15]
+            
+            # =====================================
+            # 9. SANTÉ DU SYSTÈME
+            # =====================================
+            
+            # Calculer la taille totale des fichiers
+            total_size = Document.objects.aggregate(
+                total=Sum('file_size')
+            )['total'] or 0
+            
+            total_storage_mb = round(total_size / (1024 * 1024), 2)
+            
+            # Utilisateurs actifs aujourd'hui
+            active_today = UserActivity.objects.filter(
+                created_at__gte=today_start
+            ).values('user').distinct().count()
+            
+            # Assignations en attente (professeurs sans matières)
+            from accounts.models import TeacherAssignment
+            teachers_with_assignments = TeacherAssignment.objects.filter(
+                is_active=True
+            ).values('teacher').distinct().count()
+            
+            total_active_teachers = User.objects.filter(
+                role='TEACHER',
+                is_active=True
+            ).count()
+            
+            pending_assignments = total_active_teachers - teachers_with_assignments
+            
+            # Professeurs inactifs
+            inactive_teachers = User.objects.filter(
+                role='TEACHER',
+                is_active=False
+            ).count()
+            
+            # Matières sans contenu
+            subjects_without_content = Subject.objects.annotate(
+                doc_count=Count('documents', filter=Q(documents__is_active=True))
+            ).filter(doc_count=0, is_active=True).count()
+            
+            # Étudiants sans activité (jamais consulté de document)
+            students_with_activity = UserActivity.objects.values('user').distinct().count()
+            students_without_activity = total_students - students_with_activity
+            
+            # Déterminer le statut
+            warnings = 0
+            if pending_assignments > 5:
+                warnings += 1
+            if inactive_teachers > 3:
+                warnings += 1
+            if subjects_without_content > 5:
+                warnings += 1
+            if students_without_activity > total_students * 0.3:  # Plus de 30% inactifs
+                warnings += 1
+            
+            if warnings == 0:
+                system_status = 'healthy'
+            elif warnings <= 2:
+                system_status = 'warning'
+            else:
+                system_status = 'critical'
+            
+            system_health = {
+                'status': system_status,
+                'total_storage_mb': total_storage_mb,
+                'active_users_today': active_today,
+                'pending_assignments': pending_assignments,
+                'inactive_teachers': inactive_teachers,
+                'subjects_without_content': subjects_without_content,
+                'students_without_activity': students_without_activity
+            }
+            
+            # =====================================
+            # ASSEMBLAGE FINAL
+            # =====================================
+            
+            dashboard_data = {
+                'stats': stats_data,
+                'students_by_major': students_by_major,
+                'students_by_level': students_by_level,
+                'activity_timeline': activity_timeline,
+                'top_subjects': top_subjects,
+                'top_documents': top_documents,
+                'quiz_performance': quiz_performance,
+                'recent_activities': recent_activities,
+                'system_health': system_health
+            }
+            
+            serializer = AdminDashboardSerializer(dashboard_data)
+            
+            return Response({
+                'success': True,
+                'dashboard': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur dashboard admin: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# ========================================
+# GESTION DES ÉTUDIANTS (ADMIN)
+# ========================================
+
+class AdminStudentListCreateView(APIView):
+    """
+    Liste et création des étudiants (Admin uniquement)
+    GET /api/auth/admin/students/
+    POST /api/auth/admin/students/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request):
+        """Liste de tous les étudiants avec filtres"""
+        logger.info(f"👥 Liste étudiants par admin: {request.user.username}")
+        
+        try:
+            # Récupérer tous les étudiants
+            queryset = User.objects.filter(role='STUDENT').select_related(
+                'student_profile',
+                'student_profile__level',
+                'student_profile__major'
+            )
+            
+            # Filtres
+            is_active = request.GET.get('is_active', None)
+            if is_active is not None:
+                queryset = queryset.filter(is_active=is_active.lower() == 'true')
+            
+            # Filtrer par niveau
+            level_id = request.GET.get('level', None)
+            if level_id:
+                queryset = queryset.filter(student_profile__level_id=level_id)
+            
+            # Filtrer par filière
+            major_id = request.GET.get('major', None)
+            if major_id:
+                queryset = queryset.filter(student_profile__major_id=major_id)
+            
+            # Recherche par nom, email ou numéro étudiant
+            search = request.GET.get('search', None)
+            if search:
+                queryset = queryset.filter(
+                    Q(first_name__icontains=search) |
+                    Q(last_name__icontains=search) |
+                    Q(email__icontains=search) |
+                    Q(username__icontains=search) |
+                    Q(student_profile__student_id__icontains=search)
+                )
+            
+            # Tri
+            order_by = request.GET.get('order_by', '-date_joined')
+            allowed_orders = [
+                'date_joined', '-date_joined',
+                'first_name', '-first_name',
+                'last_name', '-last_name',
+                'email', '-email'
+            ]
+            if order_by in allowed_orders:
+                queryset = queryset.order_by(order_by)
+            
+            # Sérialiser les résultats
+            serializer = StudentAdminListSerializer(queryset, many=True)
+            
+            return Response({
+                'success': True,
+                'total_students': queryset.count(),
+                'students': serializer.data,
+                'filters_applied': {
+                    'is_active': is_active,
+                    'level': level_id,
+                    'major': major_id,
+                    'search': search
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur liste étudiants: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def post(self, request):
+        """Créer un nouvel étudiant"""
+        logger.info(f"➕ Création étudiant par admin: {request.user.username}")
+        
+        serializer = StudentCreateSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            try:
+                user = serializer.save()
+                
+                # Retourner l'étudiant créé avec détails
+                response_serializer = StudentAdminDetailSerializer(user)
+                
+                logger.info(f"✅ Étudiant créé: {user.username} - {user.get_full_name()}")
+                
+                return Response({
+                    'success': True,
+                    'message': f'Étudiant "{user.get_full_name()}" créé avec succès',
+                    'student': response_serializer.data
+                }, status=status.HTTP_201_CREATED)
+                
+            except Exception as e:
+                logger.error(f"❌ Erreur création étudiant: {str(e)}")
+                return Response({
+                    'success': False,
+                    'error': 'Erreur lors de la création',
+                    'details': str(e)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminStudentDetailView(APIView):
+    """
+    Détail, modification et suppression d'un étudiant (Admin uniquement)
+    GET /api/auth/admin/students/{id}/
+    PUT/PATCH /api/auth/admin/students/{id}/
+    DELETE /api/auth/admin/students/{id}/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request, student_id):
+        """Détail d'un étudiant"""
+        logger.info(f"📖 Détail étudiant {student_id} par admin: {request.user.username}")
+        
+        try:
+            student = User.objects.select_related(
+                'student_profile',
+                'student_profile__level',
+                'student_profile__major'
+            ).get(id=student_id, role='STUDENT')
+            
+            serializer = StudentAdminDetailSerializer(student)
+            
+            return Response({
+                'success': True,
+                'student': serializer.data
+            })
+            
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Étudiant non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ Erreur détail étudiant: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def put(self, request, student_id):
+        """Mise à jour complète"""
+        return self.update_student(request, student_id, partial=False)
+    
+    def patch(self, request, student_id):
+        """Mise à jour partielle"""
+        return self.update_student(request, student_id, partial=True)
+    
+    def update_student(self, request, student_id, partial=False):
+        """Logique de mise à jour"""
+        logger.info(f"✏️ Modification étudiant {student_id} par admin: {request.user.username}")
+        
+        try:
+            student = get_object_or_404(User, id=student_id, role='STUDENT')
+            
+            serializer = StudentUpdateSerializer(
+                student,
+                data=request.data,
+                partial=partial
+            )
+            
+            if serializer.is_valid():
+                serializer.save()
+                
+                # Retourner l'étudiant mis à jour
+                response_serializer = StudentAdminDetailSerializer(student)
+                
+                logger.info(f"✅ Étudiant modifié: {student.username} - {student.get_full_name()}")
+                
+                return Response({
+                    'success': True,
+                    'message': 'Étudiant mis à jour avec succès',
+                    'student': response_serializer.data
+                })
+            
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur modification étudiant: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def delete(self, request, student_id):
+        """Supprimer un étudiant"""
+        logger.info(f"🗑️ Suppression étudiant {student_id} par admin: {request.user.username}")
+        
+        try:
+            student = get_object_or_404(User, id=student_id, role='STUDENT')
+            
+            # Vérifier s'il a des activités
+            activity_count = UserActivity.objects.filter(user=student).count()
+            quiz_count = QuizAttempt.objects.filter(user=student).count()
+            
+            if activity_count > 0 or quiz_count > 0:
+                return Response({
+                    'success': False,
+                    'error': f'Impossible de supprimer cet étudiant. Il a {activity_count} activité(s) et {quiz_count} tentative(s) de quiz.',
+                    'suggestion': 'Désactivez le compte au lieu de le supprimer pour conserver l\'historique'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            student_name = student.get_full_name()
+            student_username = student.username
+            student.delete()
+            
+            logger.info(f"✅ Étudiant supprimé: {student_username} - {student_name}")
+            
+            return Response({
+                'success': True,
+                'message': f'Étudiant "{student_name}" supprimé avec succès'
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur suppression étudiant: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminStudentStatisticsView(APIView):
+    """
+    Statistiques détaillées d'un étudiant (Admin uniquement)
+    GET /api/auth/admin/students/{id}/statistics/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request, student_id):
+        """Statistiques complètes d'un étudiant"""
+        logger.info(f"📊 Stats étudiant {student_id} par admin: {request.user.username}")
+        
+        try:
+            student = get_object_or_404(User, id=student_id, role='STUDENT')
+            
+            # Activité
+            total_views = UserActivity.objects.filter(user=student, action='view').count()
+            total_downloads = UserActivity.objects.filter(user=student, action='download').count()
+            total_favorites = UserFavorite.objects.filter(user=student).count()
+            
+            last_activity_obj = UserActivity.objects.filter(user=student).order_by('-created_at').first()
+            last_activity = last_activity_obj.created_at if last_activity_obj else None
+            
+            # Quiz
+            quiz_attempts = QuizAttempt.objects.filter(user=student)
+            total_quiz_attempts = quiz_attempts.count()
+            completed_quiz_attempts = quiz_attempts.filter(status='COMPLETED').count()
+            
+            # Score moyen
+            avg_score = 0
+            if completed_quiz_attempts > 0:
+                scores = []
+                for attempt in quiz_attempts.filter(status='COMPLETED'):
+                    if attempt.quiz.total_points > 0:
+                        normalized = (float(attempt.score) / float(attempt.quiz.total_points)) * 20
+                        scores.append(normalized)
+                
+                if scores:
+                    avg_score = round(sum(scores) / len(scores), 2)
+            
+            # Taux de réussite
+            passed = quiz_attempts.filter(
+                status='COMPLETED',
+                score__gte=F('quiz__passing_score')
+            ).count()
+            
+            quiz_pass_rate = round((passed / completed_quiz_attempts) * 100, 1) if completed_quiz_attempts > 0 else 0
+            
+            # Performance par matière
+            from courses.models import Subject
+            
+            subjects = Subject.objects.filter(
+                levels=student.student_profile.level,
+                majors=student.student_profile.major
+            ).distinct()
+            
+            performance_by_subject = []
+            
+            for subject in subjects:
+                subject_attempts = quiz_attempts.filter(quiz__subject=subject)
+                subject_total = subject_attempts.count()
+                
+                if subject_total == 0:
+                    continue
+                
+                subject_completed = subject_attempts.filter(status='COMPLETED')
+                subject_completed_count = subject_completed.count()
+                
+                # Score moyen
+                subject_avg = 0
+                if subject_completed_count > 0:
+                    scores = []
+                    for attempt in subject_completed:
+                        if attempt.quiz.total_points > 0:
+                            normalized = (float(attempt.score) / float(attempt.quiz.total_points)) * 20
+                            scores.append(normalized)
+                    
+                    if scores:
+                        subject_avg = round(sum(scores) / len(scores), 2)
+                
+                # Taux de réussite
+                subject_passed = subject_completed.filter(score__gte=F('quiz__passing_score')).count()
+                subject_pass_rate = round((subject_passed / subject_completed_count) * 100, 1) if subject_completed_count > 0 else 0
+                
+                # Activité sur la matière
+                subject_views = UserActivity.objects.filter(
+                    user=student,
+                    subject=subject,
+                    action='view'
+                ).count()
+                
+                performance_by_subject.append({
+                    'subject_id': subject.id,
+                    'subject_name': subject.name,
+                    'subject_code': subject.code,
+                    'total_attempts': subject_total,
+                    'completed_attempts': subject_completed_count,
+                    'average_score': subject_avg,
+                    'pass_rate': subject_pass_rate,
+                    'views': subject_views
+                })
+            
+            # Construire les stats
+            stats_data = {
+                'student_id': student.id,
+                'student_name': student.get_full_name(),
+                'student_email': student.email,
+                'total_views': total_views,
+                'total_downloads': total_downloads,
+                'total_favorites': total_favorites,
+                'last_activity': last_activity,
+                'total_quiz_attempts': total_quiz_attempts,
+                'completed_quiz_attempts': completed_quiz_attempts,
+                'average_quiz_score': avg_score,
+                'quiz_pass_rate': quiz_pass_rate,
+                'performance_by_subject': performance_by_subject
+            }
+            
+            serializer = StudentStatisticsSerializer(stats_data)
+            
+            return Response({
+                'success': True,
+                'statistics': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur stats étudiant: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminStudentToggleActiveView(APIView):
+    """
+    Activer/désactiver un étudiant
+    POST /api/auth/admin/students/{id}/toggle-active/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def post(self, request, student_id):
+        """Toggle is_active"""
+        try:
+            student = get_object_or_404(User, id=student_id, role='STUDENT')
+            
+            student.is_active = not student.is_active
+            student.save(update_fields=['is_active'])
+            
+            status_text = 'activé' if student.is_active else 'désactivé'
+            logger.info(f"🔄 Étudiant {status_text}: {student.username}")
+            
+            return Response({
+                'success': True,
+                'message': f'Étudiant "{student.get_full_name()}" {status_text}',
+                'is_active': student.is_active
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur toggle étudiant: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminStudentBulkActionView(APIView):
+    """
+    Actions en masse sur les étudiants
+    POST /api/auth/admin/students/bulk-action/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def post(self, request):
+        """Effectuer une action en masse"""
+        logger.info(f"🔄 Action en masse par admin: {request.user.username}")
+        
+        serializer = BulkStudentActionSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            student_ids = serializer.validated_data['student_ids']
+            action = serializer.validated_data['action']
+            
+            # Récupérer les étudiants
+            students = User.objects.filter(id__in=student_ids, role='STUDENT')
+            
+            if students.count() != len(student_ids):
+                return Response({
+                    'success': False,
+                    'error': 'Certains IDs d\'étudiants sont invalides'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            results = {
+                'success_count': 0,
+                'error_count': 0,
+                'errors': []
+            }
+            
+            # Exécuter l'action
+            if action == 'activate':
+                count = students.update(is_active=True)
+                results['success_count'] = count
+                logger.info(f"✅ {count} étudiant(s) activé(s)")
+            
+            elif action == 'deactivate':
+                count = students.update(is_active=False)
+                results['success_count'] = count
+                logger.info(f"✅ {count} étudiant(s) désactivé(s)")
+            
+            elif action == 'delete':
+                # Vérifier qu'ils n'ont pas d'activités
+                for student in students:
+                    activity_count = UserActivity.objects.filter(user=student).count()
+                    quiz_count = QuizAttempt.objects.filter(user=student).count()
+                    
+                    if activity_count > 0 or quiz_count > 0:
+                        results['error_count'] += 1
+                        results['errors'].append({
+                            'student_id': student.id,
+                            'student_name': student.get_full_name(),
+                            'error': 'A des activités ou tentatives de quiz'
+                        })
+                    else:
+                        student.delete()
+                        results['success_count'] += 1
+                
+                logger.info(f"✅ {results['success_count']} étudiant(s) supprimé(s)")
+            
+            elif action == 'change_level':
+                new_level = serializer.validated_data['new_level']
+                
+                for student in students:
+                    student.student_profile.level = new_level
+                    student.student_profile.save(update_fields=['level'])
+                    results['success_count'] += 1
+                
+                logger.info(f"✅ {results['success_count']} étudiant(s) changé(s) de niveau")
+            
+            elif action == 'change_major':
+                new_major = serializer.validated_data['new_major']
+                
+                for student in students:
+                    student.student_profile.major = new_major
+                    student.student_profile.save(update_fields=['major'])
+                    results['success_count'] += 1
+                
+                logger.info(f"✅ {results['success_count']} étudiant(s) changé(s) de filière")
+            
+            return Response({
+                'success': True,
+                'message': f'Action "{action}" effectuée sur {results["success_count"]} étudiant(s)',
+                'results': results
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur action en masse: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminStudentExportView(APIView):
+    """
+    Export des étudiants en CSV
+    GET /api/auth/admin/students/export/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request):
+        """Exporter les étudiants en CSV"""
+        logger.info(f"📥 Export étudiants par admin: {request.user.username}")
+        
+        try:
+            import csv
+            from django.http import HttpResponse
+            
+            # Créer la réponse HTTP
+            response = HttpResponse(content_type='text/csv; charset=utf-8')
+            response['Content-Disposition'] = 'attachment; filename="etudiants.csv"'
+            
+            # Ajouter le BOM UTF-8 pour Excel
+            response.write('\ufeff')
+            
+            writer = csv.writer(response)
+            
+            # En-têtes
+            writer.writerow([
+                'ID',
+                'Nom d\'utilisateur',
+                'Email',
+                'Prénom',
+                'Nom',
+                'Numéro étudiant',
+                'Niveau',
+                'Filière',
+                'Téléphone',
+                'Date de naissance',
+                'Actif',
+                'Date d\'inscription'
+            ])
+            
+            # Récupérer les étudiants avec filtres
+            queryset = User.objects.filter(role='STUDENT').select_related(
+                'student_profile',
+                'student_profile__level',
+                'student_profile__major'
+            )
+            
+            # Appliquer les mêmes filtres que la liste
+            level_id = request.GET.get('level', None)
+            if level_id:
+                queryset = queryset.filter(student_profile__level_id=level_id)
+            
+            major_id = request.GET.get('major', None)
+            if major_id:
+                queryset = queryset.filter(student_profile__major_id=major_id)
+            
+            is_active = request.GET.get('is_active', None)
+            if is_active is not None:
+                queryset = queryset.filter(is_active=is_active.lower() == 'true')
+            
+            # Écrire les données
+            for student in queryset:
+                writer.writerow([
+                    student.id,
+                    student.username,
+                    student.email,
+                    student.first_name,
+                    student.last_name,
+                    student.student_profile.student_id,
+                    student.student_profile.level.name if student.student_profile.level else '',
+                    student.student_profile.major.name if student.student_profile.major else '',
+                    student.student_profile.phone_number,
+                    student.student_profile.date_of_birth.strftime('%Y-%m-%d') if student.student_profile.date_of_birth else '',
+                    'Oui' if student.is_active else 'Non',
+                    student.date_joined.strftime('%Y-%m-%d %H:%M')
+                ])
+            
+            logger.info(f"✅ Export de {queryset.count()} étudiant(s)")
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur export étudiants: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminSubjectListCreateView(APIView):
+    """
+    Liste et création de matières (Admin uniquement)
+    GET /api/auth/admin/subjects/ - Liste des matières
+    POST /api/auth/admin/subjects/ - Créer une matière
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdminPermission]
+    
+    def get(self, request):
+        """Liste de toutes les matières"""
+        from courses.models import Subject
+        
+        subjects = Subject.objects.select_related(
+            'level', 'major', 'teacher', 'created_by'
+        ).order_by('-created_at')
+        
+        # Filtres optionnels
+        level_id = request.query_params.get('level')
+        major_id = request.query_params.get('major')
+        teacher_id = request.query_params.get('teacher')
+        is_active = request.query_params.get('is_active')
+        
+        if level_id:
+            subjects = subjects.filter(level_id=level_id)
+        if major_id:
+            subjects = subjects.filter(major_id=major_id)
+        if teacher_id:
+            subjects = subjects.filter(teacher_id=teacher_id)
+        if is_active is not None:
+            subjects = subjects.filter(is_active=is_active.lower() == 'true')
+        
+        serializer = SubjectAdminSerializer(subjects, many=True)
+        
+        return Response({
+            'success': True,
+            'count': subjects.count(),
+            'results': serializer.data
+        })
+    
+    def post(self, request):
+        """Créer une nouvelle matière"""
+        logger.info(f"➕ Création matière par admin: {request.user.username}")
+        
+        serializer = SubjectCreateSerializer(data=request.data, context={'request': request})
+        
+        if serializer.is_valid():
+            try:
+                subject = serializer.save()
+                
+                response_serializer = SubjectAdminSerializer(subject)
+                
+                return Response({
+                    'success': True,
+                    'message': f'Matière "{subject.name}" créée avec succès',
+                    'subject': response_serializer.data
+                }, status=status.HTTP_201_CREATED)
+                
+            except Exception as e:
+                logger.error(f"❌ Erreur création matière: {str(e)}")
+                return Response({
+                    'success': False,
+                    'error': 'Erreur lors de la création de la matière',
+                    'details': str(e)
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminSubjectDetailView(APIView):
+    """
+    Détails, modification et suppression d'une matière (Admin uniquement)
+    GET /api/auth/admin/subjects/{id}/ - Détails
+    PATCH /api/auth/admin/subjects/{id}/ - Modifier
+    DELETE /api/auth/admin/subjects/{id}/ - Supprimer
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdminPermission]
+    
+    def get_object(self, subject_id):
+        """Récupérer une matière par ID"""
+        from courses.models import Subject
+        try:
+            return Subject.objects.select_related(
+                'level', 'major', 'teacher', 'created_by'
+            ).get(id=subject_id)
+        except Subject.DoesNotExist:
+            return None
+    
+    def get(self, request, subject_id):
+        """Détails d'une matière"""
+        subject = self.get_object(subject_id)
+        
+        if not subject:
+            return Response({
+                'success': False,
+                'error': 'Matière non trouvée'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = SubjectAdminSerializer(subject)
+        
+        return Response({
+            'success': True,
+            'subject': serializer.data
+        })
+    
+    def patch(self, request, subject_id):
+        """Modifier une matière"""
+        subject = self.get_object(subject_id)
+        
+        if not subject:
+            return Response({
+                'success': False,
+                'error': 'Matière non trouvée'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = SubjectUpdateSerializer(
+            subject, 
+            data=request.data, 
+            partial=True,
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            serializer.save()
+            
+            response_serializer = SubjectAdminSerializer(subject)
+            
+            return Response({
+                'success': True,
+                'message': 'Matière mise à jour avec succès',
+                'subject': response_serializer.data
+            })
+        
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, subject_id):
+        """Supprimer une matière (soft delete)"""
+        subject = self.get_object(subject_id)
+        
+        if not subject:
+            return Response({
+                'success': False,
+                'error': 'Matière non trouvée'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Soft delete
+        subject.is_active = False
+        subject.save()
+        
+        logger.info(f"🗑️ Matière désactivée: {subject.name} par {request.user.username}")
+        
+        return Response({
+            'success': True,
+            'message': 'Matière supprimée avec succès'
+        })
