@@ -1231,38 +1231,29 @@ class BulkStudentActionSerializer(serializers.Serializer):
 
 class SubjectAdminSerializer(serializers.ModelSerializer):
     """Serializer pour afficher une matière (admin)"""
-    level = LevelSerializer(read_only=True)
-    major = MajorSerializer(read_only=True)
-    teacher = serializers.SerializerMethodField()
-    created_by = serializers.SerializerMethodField()
+    
+    # ✅ Utiliser les noms corrects du modèle (pluriels)
+    levels = LevelSerializer(many=True, read_only=True)
+    majors = MajorSerializer(many=True, read_only=True)
+    
+    # ✅ Champs calculés depuis le modèle
+    total_documents = serializers.IntegerField(read_only=True)
+    level_names = serializers.ListField(read_only=True)
+    major_names = serializers.ListField(read_only=True)
     
     class Meta:
         from courses.models import Subject
         model = Subject
         fields = [
             'id', 'code', 'name', 'description',
-            'level', 'major', 'teacher',
-            'credits', 'hours_per_week',
-            'is_active', 'created_at', 'updated_at',
-            'created_by'
+            'levels', 'majors',  # Relations ManyToMany
+            'level_names', 'major_names',  # Propriétés calculées
+            'credits', 
+            'is_active', 'is_featured',
+            'total_documents',  # Propriété calculée
+            'order',
+            'created_at', 'updated_at'
         ]
-    
-    def get_teacher(self, obj):
-        if obj.teacher:
-            return {
-                'id': obj.teacher.id,
-                'name': obj.teacher.get_full_name(),
-                'email': obj.teacher.email
-            }
-        return None
-    
-    def get_created_by(self, obj):
-        if obj.created_by:
-            return {
-                'id': obj.created_by.id,
-                'name': obj.created_by.get_full_name()
-            }
-        return None
 
 
 class SubjectCreateSerializer(serializers.Serializer):
@@ -1270,19 +1261,22 @@ class SubjectCreateSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=20)
     name = serializers.CharField(max_length=200)
     description = serializers.CharField(required=False, allow_blank=True)
-    level = serializers.PrimaryKeyRelatedField(
-        queryset=Level.objects.filter(is_active=True)
+    
+    # ✅ Relations ManyToMany avec many=True
+    levels = serializers.PrimaryKeyRelatedField(
+        queryset=Level.objects.filter(is_active=True),
+        many=True,
+        required=True
     )
-    major = serializers.PrimaryKeyRelatedField(
-        queryset=Major.objects.filter(is_active=True)
+    majors = serializers.PrimaryKeyRelatedField(
+        queryset=Major.objects.filter(is_active=True),
+        many=True,
+        required=True
     )
-    teacher = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.filter(role='TEACHER', is_active=True),
-        required=False,
-        allow_null=True
-    )
+    
     credits = serializers.IntegerField(required=False, default=3)
-    hours_per_week = serializers.IntegerField(required=False, default=2)
+    is_featured = serializers.BooleanField(required=False, default=False)
+    order = serializers.IntegerField(required=False, default=0)
     
     def validate_code(self, value):
         """Vérifier l'unicité du code"""
@@ -1295,45 +1289,70 @@ class SubjectCreateSerializer(serializers.Serializer):
         """Créer la matière"""
         from courses.models import Subject
         
+        # ✅ Extraire les relations ManyToMany
+        levels = validated_data.pop('levels')
+        majors = validated_data.pop('majors')
+        
+        # Créer la matière SANS teacher et created_by
         subject = Subject.objects.create(
             code=validated_data['code'],
             name=validated_data['name'],
             description=validated_data.get('description', ''),
-            level=validated_data['level'],
-            major=validated_data['major'],
-            teacher=validated_data.get('teacher'),
             credits=validated_data.get('credits', 3),
-            hours_per_week=validated_data.get('hours_per_week', 2),
-            created_by=self.context['request'].user,
+            is_featured=validated_data.get('is_featured', False),
+            order=validated_data.get('order', 0),
             is_active=True
         )
         
+        # ✅ Ajouter les relations ManyToMany
+        subject.levels.set(levels)
+        subject.majors.set(majors)
+        
         logger.info(f"✅ Matière créée: {subject.code} - {subject.name}")
         return subject
-
 
 class SubjectUpdateSerializer(serializers.Serializer):
     """Serializer pour modifier une matière"""
     name = serializers.CharField(max_length=200, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
-    teacher = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.filter(role='TEACHER', is_active=True),
-        required=False,
-        allow_null=True
+    
+    # ✅ Relations ManyToMany
+    levels = serializers.PrimaryKeyRelatedField(
+        queryset=Level.objects.filter(is_active=True),
+        many=True,
+        required=False
     )
+    majors = serializers.PrimaryKeyRelatedField(
+        queryset=Major.objects.filter(is_active=True),
+        many=True,
+        required=False
+    )
+    
     credits = serializers.IntegerField(required=False)
-    hours_per_week = serializers.IntegerField(required=False)
     is_active = serializers.BooleanField(required=False)
+    is_featured = serializers.BooleanField(required=False)
+    order = serializers.IntegerField(required=False)
     
     def update(self, instance, validated_data):
         """Mettre à jour la matière"""
+        # ✅ Extraire les ManyToMany
+        levels = validated_data.pop('levels', None)
+        majors = validated_data.pop('majors', None)
+        
+        # Mettre à jour les champs simples
         instance.name = validated_data.get('name', instance.name)
         instance.description = validated_data.get('description', instance.description)
-        instance.teacher = validated_data.get('teacher', instance.teacher)
         instance.credits = validated_data.get('credits', instance.credits)
-        instance.hours_per_week = validated_data.get('hours_per_week', instance.hours_per_week)
         instance.is_active = validated_data.get('is_active', instance.is_active)
+        instance.is_featured = validated_data.get('is_featured', instance.is_featured)
+        instance.order = validated_data.get('order', instance.order)
         instance.save()
+        
+        # ✅ Mettre à jour les ManyToMany si fournis
+        if levels is not None:
+            instance.levels.set(levels)
+        if majors is not None:
+            instance.majors.set(majors)
         
         logger.info(f"✅ Matière mise à jour: {instance.code}")
         return instance

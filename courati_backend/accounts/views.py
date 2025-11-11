@@ -43,7 +43,10 @@ from accounts.serializers import (
     StudentAdminListSerializer,
     StudentAdminDetailSerializer,
     StudentStatisticsSerializer,
-    BulkStudentActionSerializer
+    BulkStudentActionSerializer,
+    SubjectAdminSerializer,
+    SubjectCreateSerializer,
+    SubjectUpdateSerializer
 )
 
 
@@ -2338,24 +2341,26 @@ class AdminSubjectListCreateView(APIView):
         """Liste de toutes les matières"""
         from courses.models import Subject
         
-        subjects = Subject.objects.select_related(
-            'level', 'major', 'teacher', 'created_by'
+        # ✅ CORRECTION : Pas de select_related car pas de ForeignKey
+        subjects = Subject.objects.prefetch_related(
+            'levels',   # ManyToMany
+            'majors'    # ManyToMany
         ).order_by('-created_at')
         
         # Filtres optionnels
         level_id = request.query_params.get('level')
         major_id = request.query_params.get('major')
-        teacher_id = request.query_params.get('teacher')
         is_active = request.query_params.get('is_active')
         
         if level_id:
-            subjects = subjects.filter(level_id=level_id)
+            subjects = subjects.filter(levels__id=level_id)
         if major_id:
-            subjects = subjects.filter(major_id=major_id)
-        if teacher_id:
-            subjects = subjects.filter(teacher_id=teacher_id)
+            subjects = subjects.filter(majors__id=major_id)
         if is_active is not None:
             subjects = subjects.filter(is_active=is_active.lower() == 'true')
+        
+        # ✅ distinct() pour éviter les doublons avec ManyToMany
+        subjects = subjects.distinct()
         
         serializer = SubjectAdminSerializer(subjects, many=True)
         
@@ -2369,32 +2374,19 @@ class AdminSubjectListCreateView(APIView):
         """Créer une nouvelle matière"""
         logger.info(f"➕ Création matière par admin: {request.user.username}")
         
-        serializer = SubjectCreateSerializer(data=request.data, context={'request': request})
+        serializer = SubjectCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         
-        if serializer.is_valid():
-            try:
-                subject = serializer.save()
-                
-                response_serializer = SubjectAdminSerializer(subject)
-                
-                return Response({
-                    'success': True,
-                    'message': f'Matière "{subject.name}" créée avec succès',
-                    'subject': response_serializer.data
-                }, status=status.HTTP_201_CREATED)
-                
-            except Exception as e:
-                logger.error(f"❌ Erreur création matière: {str(e)}")
-                return Response({
-                    'success': False,
-                    'error': 'Erreur lors de la création de la matière',
-                    'details': str(e)
-                }, status=status.HTTP_400_BAD_REQUEST)
+        subject = serializer.save()
+        
+        # Retourner avec le serializer d'affichage
+        response_serializer = SubjectAdminSerializer(subject)
         
         return Response({
-            'success': False,
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+            'success': True,
+            'message': 'Matière créée avec succès',
+            'data': response_serializer.data
+        }, status=status.HTTP_201_CREATED)
 
 
 class AdminSubjectDetailView(APIView):
@@ -2410,8 +2402,10 @@ class AdminSubjectDetailView(APIView):
         """Récupérer une matière par ID"""
         from courses.models import Subject
         try:
-            return Subject.objects.select_related(
-                'level', 'major', 'teacher', 'created_by'
+            # ✅ CORRECTION : prefetch_related pour ManyToMany
+            return Subject.objects.prefetch_related(
+                'levels',   # ManyToMany (pluriel)
+                'majors'    # ManyToMany (pluriel)
             ).get(id=subject_id)
         except Subject.DoesNotExist:
             return None
