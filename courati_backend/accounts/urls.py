@@ -36,9 +36,7 @@ urlpatterns = [
     path('admin/majors/', views.MajorListCreateView.as_view(), name='admin_majors'),
     path('admin/majors/<int:pk>/', views.MajorDetailView.as_view(), name='admin_major_detail'),
 
-    # ✅ AJOUTER : Gestion des matières (Admin)
-    path('admin/subjects/', views.AdminSubjectListCreateView.as_view(), name='admin-subjects'),
-    path('admin/subjects/<int:subject_id>/', views.AdminSubjectDetailView.as_view(), name='admin-subject-detail'),
+    
 
     # Gestion admin des professeurs
     path('admin/teachers/', views.TeacherListCreateView.as_view(), name='admin_teachers'),

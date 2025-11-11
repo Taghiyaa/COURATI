@@ -2090,7 +2090,7 @@ class AdminSubjectListCreateView(APIView):
         logger.info(f"📚 Liste matières par admin: {request.user.username}")
         
         try:
-            # Récupérer toutes les matières
+            # Base queryset
             queryset = Subject.objects.all().prefetch_related('levels', 'majors')
             
             # Filtres
@@ -2102,28 +2102,22 @@ class AdminSubjectListCreateView(APIView):
             if is_featured is not None:
                 queryset = queryset.filter(is_featured=is_featured.lower() == 'true')
             
-            # Recherche par nom ou code
             search = request.GET.get('search', None)
             if search:
                 queryset = queryset.filter(
                     Q(name__icontains=search) | Q(code__icontains=search)
                 )
             
-            # Filtrer par niveau
             level_id = request.GET.get('level', None)
             if level_id:
                 queryset = queryset.filter(levels__id=level_id)
             
-            # Filtrer par filière
             major_id = request.GET.get('major', None)
             if major_id:
                 queryset = queryset.filter(majors__id=major_id)
             
-            # Annoter avec statistiques
-            queryset = queryset.annotate(
-                total_documents=Count('documents', filter=Q(documents__is_active=True)),
-                total_quizzes=Count('quizzes', filter=Q(quizzes__is_active=True))
-            ).order_by('order', 'name')
+            # ✅ PAS D'ANNOTATION - utiliser les propriétés du modèle
+            queryset = queryset.order_by('order', 'name')
             
             # Sérialiser
             serializer = SubjectAdminListSerializer(queryset, many=True)
@@ -2143,6 +2137,9 @@ class AdminSubjectListCreateView(APIView):
             
         except Exception as e:
             logger.error(f"❌ Erreur liste matières: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
             return Response({
                 'success': False,
                 'error': 'Erreur serveur',
@@ -2198,10 +2195,8 @@ class AdminSubjectDetailView(APIView):
         logger.info(f"📖 Détail matière {subject_id} par admin: {request.user.username}")
         
         try:
-            subject = Subject.objects.annotate(
-                total_documents=Count('documents', filter=Q(documents__is_active=True)),
-                total_quizzes=Count('quizzes', filter=Q(quizzes__is_active=True))
-            ).get(id=subject_id)
+            # ✅ PAS D'ANNOTATION
+            subject = Subject.objects.prefetch_related('levels', 'majors').get(id=subject_id)
             
             serializer = SubjectAdminDetailSerializer(subject)
             
@@ -2223,12 +2218,11 @@ class AdminSubjectDetailView(APIView):
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+    # Garde les méthodes put, patch, delete comme elles sont
     def put(self, request, subject_id):
-        """Mise à jour complète"""
         return self.update_subject(request, subject_id, partial=False)
     
     def patch(self, request, subject_id):
-        """Mise à jour partielle"""
         return self.update_subject(request, subject_id, partial=True)
     
     def update_subject(self, request, subject_id, partial=False):
