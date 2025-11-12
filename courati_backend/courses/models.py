@@ -379,16 +379,18 @@ class Quiz(models.Model):
     
     @property
     def passing_score(self):
-        """Calcule le score de passage en points bruts à partir du pourcentage"""
+        """Score de passage en points bruts à partir du pourcentage"""
         total = self.total_points
         if total > 0:
-            return (total * self.passing_percentage) / 100
+            return (float(total) * float(self.passing_percentage)) / 100
         return 0
     
     @property
     def passing_score_normalized(self):
         """Score de passage normalisé sur 20"""
-        return (self.passing_percentage * 20) / 100
+        if self.total_points > 0:
+            return (float(self.passing_score) / float(self.total_points)) * 20
+        return (float(self.passing_percentage) * 20) / 100
 
 
 class Question(models.Model):
@@ -504,7 +506,7 @@ class QuizAttempt(models.Model):
         """Vérifie si le quiz est réussi"""
         if self.score is None:
             return False
-        return self.score >= self.quiz.passing_score
+        return self.score >= self.quiz.passing_percentage
     
     @property
     def time_spent(self):

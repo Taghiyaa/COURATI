@@ -1,19 +1,19 @@
-# courses/management/commands/convert_passing_scores.py
+# courses/management/commands/convert_passing_percentages.py
 
 from django.core.management.base import BaseCommand
 from courses.models import Quiz
 
 class Command(BaseCommand):
-    help = 'Convertit les anciens passing_score en passing_percentage'
+    help = 'Convertit les anciens passing_percentage en passing_percentage'
 
     def handle(self, *args, **options):
         quizzes = Quiz.objects.all()
         
         for quiz in quizzes:
-            # Si vous aviez passing_score sur 20
-            # Exemple: passing_score = 10/20 → passing_percentage = 50%
-            if hasattr(quiz, 'passing_score'):
-                old_score = float(quiz.passing_score)
+            # Si vous aviez passing_percentage sur 20
+            # Exemple: passing_percentage = 10/20 → passing_percentage = 50%
+            if hasattr(quiz, 'passing_percentage'):
+                old_score = float(quiz.passing_percentage)
                 percentage = (old_score / 20) * 100
                 
                 quiz.passing_percentage = round(percentage, 2)

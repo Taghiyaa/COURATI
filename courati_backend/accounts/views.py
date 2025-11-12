@@ -1238,6 +1238,41 @@ class TeacherAssignmentDetailView(APIView):
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+# accounts/views.py
+
+class TeacherToggleActiveView(APIView):
+    """
+    Activer/Désactiver un professeur
+    POST /api/auth/admin/teachers/{id}/toggle-active/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def post(self, request, teacher_id):
+        """Toggle is_active d'un professeur"""
+        try:
+            teacher_user = get_object_or_404(User, id=teacher_id, role='TEACHER')
+            
+            # Toggle
+            teacher_user.is_active = not teacher_user.is_active
+            teacher_user.save(update_fields=['is_active'])
+            
+            status_text = 'activé' if teacher_user.is_active else 'désactivé'
+            
+            logger.info(f"🔄 Professeur {status_text}: {teacher_user.username}")
+            
+            return Response({
+                'success': True,
+                'message': f'Professeur {teacher_user.get_full_name()} {status_text}',
+                'is_active': teacher_user.is_active
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur toggle professeur: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # ========================================
 # DASHBOARD ADMIN
@@ -1491,7 +1526,7 @@ class AdminDashboardView(APIView):
 
             passed = 0
             for attempt in completed:
-                if attempt.score >= attempt.quiz.passing_score:
+                if attempt.score >= attempt.quiz.passing_percentage:
                     passed += 1
 
             pass_rate = 0
@@ -1517,7 +1552,7 @@ class AdminDashboardView(APIView):
                     # Compter manuellement les tentatives réussies
                     passed_quiz = 0
                     for attempt in completed_quiz_attempts:
-                        if attempt.score >= quiz.passing_score:  # ✅ Utiliser dans Python, pas dans filter()
+                        if attempt.score >= quiz.passing_percentage:  # ✅ Utiliser dans Python, pas dans filter()
                             passed_quiz += 1
                     
                     quiz_pass_rate = (passed_quiz / completed_count) * 100
@@ -2004,7 +2039,7 @@ class AdminStudentStatisticsView(APIView):
             # Taux de réussite
             passed = quiz_attempts.filter(
                 status='COMPLETED',
-                score__gte=F('quiz__passing_score')
+                score__gte=F('quiz__passing_percentage')
             ).count()
             
             quiz_pass_rate = round((passed / completed_quiz_attempts) * 100, 1) if completed_quiz_attempts > 0 else 0
@@ -2042,7 +2077,7 @@ class AdminStudentStatisticsView(APIView):
                         subject_avg = round(sum(scores) / len(scores), 2)
                 
                 # Taux de réussite
-                subject_passed = subject_completed.filter(score__gte=F('quiz__passing_score')).count()
+                subject_passed = subject_completed.filter(score__gte=F('quiz__passing_percentage')).count()
                 subject_pass_rate = round((subject_passed / subject_completed_count) * 100, 1) if subject_completed_count > 0 else 0
                 
                 # Activité sur la matière

@@ -20,7 +20,7 @@ class Migration(migrations.Migration):
                 ('title', models.CharField(max_length=200, verbose_name='titre')),
                 ('description', models.TextField(blank=True, verbose_name='description')),
                 ('duration_minutes', models.PositiveIntegerField(default=15, help_text='Temps alloué pour compléter le quiz', verbose_name='durée (minutes)')),
-                ('passing_score', models.DecimalField(decimal_places=2, default=10.0, help_text='Score minimum pour réussir (sur 20)', max_digits=5, verbose_name='score minimum')),
+                ('passing_percentage', models.DecimalField(decimal_places=2, default=10.0, help_text='Score minimum pour réussir (sur 20)', max_digits=5, verbose_name='score minimum')),
                 ('max_attempts', models.PositiveIntegerField(default=3, help_text="Nombre de fois que l'étudiant peut passer le quiz", verbose_name='tentatives maximales')),
                 ('show_correction', models.BooleanField(default=True, help_text='Montrer les bonnes réponses après soumission', verbose_name='afficher la correction')),
                 ('is_active', models.BooleanField(default=True, verbose_name='actif')),

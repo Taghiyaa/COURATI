@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ('courses', '0007_remove_quiz_passing_score_quiz_passing_percentage'),
+        ('courses', '0006_quiz_quizattempt_question_choice_studentanswer'),
     ]
 
     operations = [

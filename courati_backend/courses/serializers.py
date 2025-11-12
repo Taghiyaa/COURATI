@@ -576,7 +576,7 @@ class QuizListSerializer(serializers.ModelSerializer):
     total_points = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
     
     # Champs calculés à partir du pourcentage
-    passing_score_normalized = serializers.SerializerMethodField()
+    passing_percentage_normalized = serializers.SerializerMethodField()
     
     # Informations spécifiques à l'étudiant connecté
     user_best_score = serializers.SerializerMethodField()
@@ -593,7 +593,7 @@ class QuizListSerializer(serializers.ModelSerializer):
         model = Quiz
         fields = [
             'id', 'title', 'description', 'subject_name', 'subject_code',
-            'duration_minutes', 'passing_percentage', 'passing_score_normalized',
+            'duration_minutes', 'passing_percentage', 'passing_percentage_normalized',
             'max_attempts', 'question_count', 'total_points', 'is_active',
             'available_from', 'available_until',
             'user_best_score', 'user_attempts_count', 'user_last_attempt',
@@ -601,9 +601,10 @@ class QuizListSerializer(serializers.ModelSerializer):
             'is_available', 'can_attempt'
         ]
     
-    def get_passing_score_normalized(self, obj):
+    def get_passing_percentage_normalized(self, obj):
         """Score de passage normalisé sur 20"""
-        return round(float(obj.passing_score_normalized), 2)
+        # Calculer manuellement au lieu d'utiliser la property
+        return round((float(obj.passing_percentage) * 20) / 100, 2)
     
     def get_user_best_score(self, obj):
         """Meilleur score de l'étudiant - NORMALISÉ sur 20"""
@@ -713,7 +714,7 @@ class QuizDetailSerializer(serializers.ModelSerializer):
     subject_code = serializers.CharField(source='subject.code', read_only=True)
     question_count = serializers.IntegerField(read_only=True)
     total_points = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
-    passing_score_normalized = serializers.SerializerMethodField()
+    passing_percentage_normalized = serializers.SerializerMethodField()
     
     class Meta:
         model = Quiz
@@ -721,14 +722,14 @@ class QuizDetailSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 
             'subject_name', 'subject_code',
             'duration_minutes', 'passing_percentage',
-            'passing_score_normalized', 'max_attempts', 
+            'passing_percentage_normalized', 'max_attempts', 
             'show_correction', 'question_count', 'total_points',
             'questions'
         ]
     
-    def get_passing_score_normalized(self, obj):
+    def get_passing_percentage_normalized(self, obj):
         """Score de passage normalisé sur 20"""
-        return round(float(obj.passing_score_normalized), 2)
+        return round((float(obj.passing_percentage) * 20) / 100, 2)
 
 class StudentAnswerSerializer(serializers.ModelSerializer):
     """Serializer pour soumettre une réponse"""
@@ -811,7 +812,7 @@ class QuizSubmitSerializer(serializers.Serializer):
 class QuizResultSerializer(serializers.ModelSerializer):
     """Serializer pour les résultats d'un quiz"""
     quiz_title = serializers.CharField(source='quiz.title', read_only=True)
-    passing_score = serializers.SerializerMethodField()
+    passing_percentage = serializers.SerializerMethodField()
     is_passed = serializers.BooleanField(read_only=True)
     time_spent = serializers.FloatField(read_only=True)
     total_questions = serializers.SerializerMethodField()
@@ -823,7 +824,7 @@ class QuizResultSerializer(serializers.ModelSerializer):
         model = QuizAttempt
         fields = [
             'id', 'quiz_title', 'score', 'score_normalized',  # AJOUTÉ score_normalized
-            'passing_score', 'is_passed',
+            'passing_percentage', 'is_passed',
             'attempt_number', 'started_at', 'completed_at', 'time_spent',
             'total_questions', 'correct_answers', 'wrong_answers'
         ]
@@ -835,9 +836,9 @@ class QuizResultSerializer(serializers.ModelSerializer):
             return round((float(obj.score) / float(total_points)) * 20, 2)
         return float(obj.score)
     
-    def get_passing_score(self, obj):
+    def get_passing_percentage(self, obj):
         """Passing score normalisé sur 20"""
-        return round(float(obj.quiz.passing_score_normalized), 2)
+        return round((float(obj.quiz.passing_percentage) * 20) / 100, 2)
     
     def get_total_questions(self, obj):
         return obj.quiz.question_count
@@ -1714,7 +1715,7 @@ class QuizAdminDetailSerializer(serializers.ModelSerializer):
         if total == 0:
             return 0
         
-        passed = completed.filter(score__gte=obj.passing_score).count()
+        passed = completed.filter(score__gte=obj.passing_percentage).count()
         return round((passed / total) * 100, 1)
 
 
@@ -1790,8 +1791,8 @@ class TeacherQuizAttemptListSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(source='user.get_full_name', read_only=True)
     student_email = serializers.EmailField(source='user.email', read_only=True)
     quiz_title = serializers.CharField(source='quiz.title', read_only=True)
-    quiz_passing_score = serializers.DecimalField(
-        source='quiz.passing_score',
+    quiz_passing_percentage = serializers.DecimalField(
+        source='quiz.passing_percentage',
         max_digits=5,
         decimal_places=2,
         read_only=True
@@ -1811,7 +1812,7 @@ class TeacherQuizAttemptListSerializer(serializers.ModelSerializer):
             'quiz_title',
             'status',
             'score',
-            'quiz_passing_score',
+            'quiz_passing_percentage',
             'score_percentage',
             'is_passed',
             'started_at',
@@ -1828,7 +1829,7 @@ class TeacherQuizAttemptListSerializer(serializers.ModelSerializer):
     def get_is_passed(self, obj):
         """Vérifier si l'étudiant a réussi"""
         if obj.status == 'COMPLETED':
-            return obj.score >= obj.quiz.passing_score
+            return obj.score >= obj.quiz.passing_percentage
         return None
     
     def get_duration_seconds(self, obj):

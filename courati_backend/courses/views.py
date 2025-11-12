@@ -1549,7 +1549,7 @@ class QuizViewSet(viewsets.ReadOnlyModelViewSet):
         }
         
         if completed.count() > 0:
-            passed = completed.filter(score__gte=quiz.passing_score).count()
+            passed = completed.filter(score__gte=quiz.passing_percentage).count()
             stats['pass_rate'] = (passed / completed.count()) * 100
         
         # Ajouter les statistiques au quiz
@@ -1565,41 +1565,105 @@ class QuizViewSet(viewsets.ReadOnlyModelViewSet):
     def my_quizzes(self, request):
         """
         Récupérer tous les quiz de l'étudiant avec son statut
-        GET /api/quiz/my_quizzes/
-        
-        ✅ ISOLATION : Affiche uniquement les quiz de la filière ACTUELLE
+        GET /api/quizzes/my_quizzes/
         """
         user = request.user
         
-        # Vérifier que c'est un étudiant
-        if not user.is_student():
+        if not hasattr(user, 'is_student') or not user.is_student():
             return Response({
                 'error': 'Cette ressource est réservée aux étudiants'
             }, status=status.HTTP_403_FORBIDDEN)
         
         try:
+            if not hasattr(user, 'student_profile'):
+                return Response({
+                    'error': 'Profil étudiant non trouvé'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
             student_profile = user.student_profile
             
-            # Vérifier profil complet
             if not student_profile.level or not student_profile.major:
                 return Response({
                     'error': 'Profil incomplet',
                     'message': 'Veuillez compléter votre profil (niveau et filière)',
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # ✅ RÉCUPÉRER LES QUIZ DE LA FILIÈRE ACTUELLE UNIQUEMENT
+            # Récupérer les quiz
             quizzes = Quiz.objects.filter(
                 is_active=True,
                 subject__levels=student_profile.level,
                 subject__majors=student_profile.major
             ).distinct().select_related('subject')
             
-            # Sérialiser avec le contexte (pour afficher les tentatives filtrées)
-            serializer = QuizListSerializer(
-                quizzes, 
-                many=True, 
-                context={'request': request}
+            # Récupérer les tentatives en une requête
+            from django.db.models import Max, Count as CountAgg
+            
+            user_attempts = QuizAttempt.objects.filter(
+                user=user,
+                quiz__in=quizzes
+            ).values('quiz_id').annotate(
+                attempts_count=CountAgg('id'),
+                best_score=Max('score'),
+                last_attempt_date=Max('started_at')
             )
+            
+            attempts_dict = {a['quiz_id']: a for a in user_attempts}
+            
+            # Construire la réponse
+            quizzes_data = []
+            
+            for quiz in quizzes:
+                user_data = attempts_dict.get(quiz.id, {})
+                attempts_count = user_data.get('attempts_count', 0)
+                best_score = user_data.get('best_score', None)
+                last_attempt = user_data.get('last_attempt_date', None)
+                
+                # Calculer les points totaux
+                total_points = quiz.total_points or 0
+                question_count = quiz.question_count or 0
+                
+                # Score normalisé
+                best_score_normalized = None
+                best_score_percentage = 0
+                
+                if best_score is not None and total_points > 0:
+                    best_score_normalized = round((float(best_score) / float(total_points)) * 20, 2)
+                    best_score_percentage = round((float(best_score) / float(total_points)) * 100, 1)
+                
+                remaining_attempts = max(0, quiz.max_attempts - attempts_count)
+                
+                # Disponibilité
+                now = timezone.now()
+                is_available = quiz.is_active
+                if quiz.available_from and now < quiz.available_from:
+                    is_available = False
+                if quiz.available_until and now > quiz.available_until:
+                    is_available = False
+                
+                can_attempt = is_available and (attempts_count < quiz.max_attempts)
+                
+                quizzes_data.append({
+                    'id': quiz.id,
+                    'title': quiz.title,
+                    'description': quiz.description,
+                    'subject_name': quiz.subject.name,
+                    'subject_code': quiz.subject.code,
+                    'duration_minutes': quiz.duration_minutes,
+                    'passing_percentage': float(quiz.passing_percentage),
+                    'max_attempts': quiz.max_attempts,
+                    'question_count': question_count,
+                    'total_points': float(total_points),
+                    'is_active': quiz.is_active,
+                    'available_from': quiz.available_from,
+                    'available_until': quiz.available_until,
+                    'user_best_score': best_score_normalized,
+                    'user_attempts_count': attempts_count,
+                    'user_last_attempt': last_attempt,
+                    'best_score_percentage': best_score_percentage,
+                    'remaining_attempts': remaining_attempts,
+                    'is_available': is_available,
+                    'can_attempt': can_attempt
+                })
             
             return Response({
                 'success': True,
@@ -1607,13 +1671,15 @@ class QuizViewSet(viewsets.ReadOnlyModelViewSet):
                     'level': student_profile.level.name,
                     'major': student_profile.major.name,
                 },
-                'quizzes': serializer.data,
-                'total_quizzes': quizzes.count(),
+                'quizzes': quizzes_data,
+                'total_quizzes': len(quizzes_data),
                 'message': 'Quiz disponibles pour votre filière actuelle'
             })
             
         except Exception as e:
             logger.error(f"❌ Erreur my_quizzes pour {user.username}: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return Response({
                 'error': 'Erreur serveur',
                 'details': str(e)
@@ -3187,7 +3253,7 @@ class TeacherDashboardView(APIView):
                         avg_score = round(sum(scores) / len(scores), 2)
                     
                     # Taux de réussite
-                    passed = completed.filter(score__gte=F('quiz__passing_score')).count()
+                    passed = completed.filter(score__gte=F('quiz__passing_percentage')).count()
                     pass_rate = round((passed / completed.count()) * 100, 1)
                 
                 subject_performance.append({
@@ -3252,7 +3318,7 @@ class TeacherDashboardView(APIView):
             ).select_related('user', 'quiz', 'quiz__subject').order_by('-completed_at')[:5]
             
             for attempt in recent_attempts:
-                is_passed = attempt.score >= attempt.quiz.passing_score
+                is_passed = attempt.score >= attempt.quiz.passing_percentage
                 recent_activities.append({
                     'activity_type': 'quiz_attempt',
                     'title': 'Quiz complété',
@@ -3355,7 +3421,7 @@ class TeacherQuizAttemptsView(APIView):
                 if scores:
                     avg_score = round(sum(scores) / len(scores), 2)
             
-            passed = completed.filter(score__gte=quiz.passing_score).count()
+            passed = completed.filter(score__gte=quiz.passing_percentage).count()
             pass_rate = round((passed / completed_count) * 100, 1) if completed_count > 0 else 0
             
             return Response({
@@ -3364,7 +3430,7 @@ class TeacherQuizAttemptsView(APIView):
                     'id': quiz.id,
                     'title': quiz.title,
                     'total_points': float(quiz.total_points),
-                    'passing_score': float(quiz.passing_score)
+                    'passing_percentage': float(quiz.passing_percentage)
                 },
                 'statistics': {
                     'total_attempts': total_attempts,

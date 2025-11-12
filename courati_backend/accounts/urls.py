@@ -43,6 +43,10 @@ urlpatterns = [
     path('admin/teachers/<int:pk>/', views.TeacherDetailView.as_view(), name='admin_teacher_detail'),
     path('admin/teachers/<int:teacher_id>/assignments/', views.TeacherAssignmentsView.as_view(), name='teacher_assignments'),
     path('admin/assignments/<int:assignment_id>/', views.TeacherAssignmentDetailView.as_view(), name='assignment_detail'),
+    path('admin/teachers/<int:teacher_id>/toggle-active/', 
+         views.TeacherToggleActiveView.as_view(), 
+         name='teacher-toggle-active'),
+
     # Dashboard Admin
     path('admin/dashboard/', views.AdminDashboardView.as_view(), name='admin_dashboard'),
 

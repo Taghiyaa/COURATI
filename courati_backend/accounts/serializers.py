@@ -1002,6 +1002,8 @@ class StudentAdminListSerializer(serializers.ModelSerializer):
         return last.created_at if last else None
 
 
+# accounts/serializers.py
+
 class StudentAdminDetailSerializer(serializers.ModelSerializer):
     """Serializer détaillé pour un étudiant (Admin)"""
     full_name = serializers.CharField(source='get_full_name', read_only=True)
@@ -1024,146 +1026,166 @@ class StudentAdminDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id',
-            'username',
-            'email',
-            'full_name',
-            'first_name',
-            'last_name',
-            'is_active',
-            'date_joined',
-            'last_login',
-            'level',
-            'major',
-            'phone_number',
-            'student_id',
-            'date_of_birth',
-            'address',
-            'emergency_contact',
-            'emergency_phone',
-            'statistics',
-            'recent_activities',
-            'quiz_performance'
+            'id', 'username', 'email', 'full_name', 'first_name', 'last_name',
+            'is_active', 'date_joined', 'last_login',
+            'level', 'major', 'phone_number', 'student_id', 'date_of_birth',
+            'address', 'emergency_contact', 'emergency_phone',
+            'statistics', 'recent_activities', 'quiz_performance'
         ]
     
     def get_statistics(self, obj):
         """Statistiques globales de l'étudiant"""
         from courses.models import UserActivity, QuizAttempt, UserFavorite
-        from django.db.models import F
         
-        # Documents
-        total_views = UserActivity.objects.filter(user=obj, action='view').count()
-        total_downloads = UserActivity.objects.filter(user=obj, action='download').count()
-        total_favorites = UserFavorite.objects.filter(user=obj).count()
-        
-        # Quiz
-        quiz_attempts = QuizAttempt.objects.filter(user=obj)
-        total_attempts = quiz_attempts.count()
-        completed_attempts = quiz_attempts.filter(status='COMPLETED').count()
-        
-        # Score moyen
-        avg_score = 0
-        if completed_attempts > 0:
-            scores = []
-            for attempt in quiz_attempts.filter(status='COMPLETED'):
-                if attempt.quiz.total_points > 0:
-                    normalized = (float(attempt.score) / float(attempt.quiz.total_points)) * 20
-                    scores.append(normalized)
+        try:
+            # Documents
+            total_views = UserActivity.objects.filter(user=obj, action='view').count()
+            total_downloads = UserActivity.objects.filter(user=obj, action='download').count()
+            total_favorites = UserFavorite.objects.filter(user=obj).count()
             
-            if scores:
-                avg_score = round(sum(scores) / len(scores), 2)
-        
-        # ✅ CORRECTION ICI : Utiliser passing_percentage
-        # Calculer le nombre de quiz réussis
-        passed = 0
-        for attempt in quiz_attempts.filter(status='COMPLETED'):
-            if attempt.quiz.total_points > 0:
-                # Calculer le pourcentage de réussite
-                percentage = (float(attempt.score) / float(attempt.quiz.total_points)) * 100
-                # Comparer avec le passing_percentage du quiz
-                if percentage >= attempt.quiz.passing_percentage:
-                    passed += 1
-        
-        pass_rate = round((passed / completed_attempts) * 100, 1) if completed_attempts > 0 else 0
-        
-        return {
-            'total_views': total_views,
-            'total_downloads': total_downloads,
-            'total_favorites': total_favorites,
-            'total_quiz_attempts': total_attempts,
-            'completed_quiz_attempts': completed_attempts,
-            'average_quiz_score': avg_score,
-            'quiz_pass_rate': pass_rate
-        }
+            # Quiz
+            quiz_attempts = QuizAttempt.objects.filter(user=obj)
+            total_attempts = quiz_attempts.count()
+            completed_attempts = quiz_attempts.filter(status='COMPLETED')
+            completed_count = completed_attempts.count()
+            
+            # Score moyen et taux de réussite
+            avg_score = 0
+            passed = 0
+            
+            if completed_count > 0:
+                scores = []
+                for attempt in completed_attempts.select_related('quiz'):
+                    total_points = attempt.quiz.total_points
+                    if total_points and total_points > 0:
+                        # Score normalisé sur 20
+                        normalized = (float(attempt.score) / float(total_points)) * 20
+                        scores.append(normalized)
+                        
+                        # Vérifier si passé (comparer avec le pourcentage requis)
+                        percentage = (float(attempt.score) / float(total_points)) * 100
+                        if percentage >= float(attempt.quiz.passing_percentage):
+                            passed += 1
+                
+                if scores:
+                    avg_score = round(sum(scores) / len(scores), 2)
+            
+            pass_rate = round((passed / completed_count) * 100, 1) if completed_count > 0 else 0
+            
+            return {
+                'total_views': total_views,
+                'total_downloads': total_downloads,
+                'total_favorites': total_favorites,
+                'total_quiz_attempts': total_attempts,
+                'completed_quiz_attempts': completed_count,
+                'average_quiz_score': avg_score,
+                'quiz_pass_rate': pass_rate
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur get_statistics: {str(e)}")
+            return {
+                'total_views': 0, 'total_downloads': 0, 'total_favorites': 0,
+                'total_quiz_attempts': 0, 'completed_quiz_attempts': 0,
+                'average_quiz_score': 0, 'quiz_pass_rate': 0
+            }
     
     def get_recent_activities(self, obj):
         """Activités récentes de l'étudiant"""
         from courses.models import UserActivity
         
-        activities = UserActivity.objects.filter(
-            user=obj
-        ).select_related('document', 'subject').order_by('-created_at')[:10]
-        
-        return [{
-            'id': a.id,
-            'action': a.action,
-            'document_title': a.document.title if a.document else None,
-            'subject_name': a.subject.name if a.subject else None,
-            'created_at': a.created_at
-        } for a in activities]
+        try:
+            activities = UserActivity.objects.filter(
+                user=obj
+            ).select_related('document', 'subject').order_by('-created_at')[:10]
+            
+            return [{
+                'id': a.id,
+                'action': a.action,
+                'document_title': a.document.title if a.document else None,
+                'subject_name': a.subject.name if a.subject else None,
+                'created_at': a.created_at
+            } for a in activities]
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur get_recent_activities: {str(e)}")
+            return []
     
     def get_quiz_performance(self, obj):
         """Performance aux quiz par matière"""
         from courses.models import QuizAttempt, Subject
         
-        # Récupérer les matières du niveau et de la filière de l'étudiant
-        subjects = Subject.objects.filter(
-            levels=obj.student_profile.level,
-            majors=obj.student_profile.major
-        ).distinct()
-        
-        performance = []
-        
-        for subject in subjects:
-            attempts = QuizAttempt.objects.filter(
-                user=obj,
-                quiz__subject=subject
-            )
+        try:
+            if not hasattr(obj, 'student_profile'):
+                return []
             
-            total = attempts.count()
-            if total == 0:
-                continue
+            profile = obj.student_profile
+            if not profile.level or not profile.major:
+                return []
             
-            completed = attempts.filter(status='COMPLETED')
-            completed_count = completed.count()
+            subjects = Subject.objects.filter(
+                levels=profile.level,
+                majors=profile.major
+            ).distinct()
             
-            # Score moyen
-            avg_score = 0
-            if completed_count > 0:
-                scores = []
-                for attempt in completed:
-                    if attempt.quiz.total_points > 0:
-                        normalized = (float(attempt.score) / float(attempt.quiz.total_points)) * 20
-                        scores.append(normalized)
+            performance = []
+            
+            for subject in subjects:
+                attempts = QuizAttempt.objects.filter(
+                    user=obj,
+                    quiz__subject=subject
+                ).select_related('quiz')
                 
-                if scores:
-                    avg_score = round(sum(scores) / len(scores), 2)
+                total = attempts.count()
+                if total == 0:
+                    continue
+                
+                completed = attempts.filter(status='COMPLETED')
+                completed_count = completed.count()
+                
+                if completed_count == 0:
+                    performance.append({
+                        'subject_id': subject.id,
+                        'subject_name': subject.name,
+                        'subject_code': subject.code,
+                        'total_attempts': total,
+                        'completed_attempts': 0,
+                        'average_score': 0,
+                        'pass_rate': 0
+                    })
+                    continue
+                
+                scores = []
+                passed = 0
+                
+                for attempt in completed:
+                    total_points = attempt.quiz.total_points
+                    if total_points and total_points > 0:
+                        normalized = (float(attempt.score) / float(total_points)) * 20
+                        scores.append(normalized)
+                        
+                        percentage = (float(attempt.score) / float(total_points)) * 100
+                        if percentage >= float(attempt.quiz.passing_percentage):
+                            passed += 1
+                
+                avg_score = round(sum(scores) / len(scores), 2) if scores else 0
+                pass_rate = round((passed / completed_count) * 100, 1)
+                
+                performance.append({
+                    'subject_id': subject.id,
+                    'subject_name': subject.name,
+                    'subject_code': subject.code,
+                    'total_attempts': total,
+                    'completed_attempts': completed_count,
+                    'average_score': avg_score,
+                    'pass_rate': pass_rate
+                })
             
-            # Taux de réussite
-            passed = completed.filter(score__gte=models.F('quiz__passing_score')).count()
-            pass_rate = round((passed / completed_count) * 100, 1) if completed_count > 0 else 0
+            return performance
             
-            performance.append({
-                'subject_id': subject.id,
-                'subject_name': subject.name,
-                'subject_code': subject.code,
-                'total_attempts': total,
-                'completed_attempts': completed_count,
-                'average_score': avg_score,
-                'pass_rate': pass_rate
-            })
-        
-        return performance
+        except Exception as e:
+            logger.error(f"❌ Erreur get_quiz_performance: {str(e)}")
+            return []
 
 
 class StudentStatisticsSerializer(serializers.Serializer):

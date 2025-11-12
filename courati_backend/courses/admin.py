@@ -387,7 +387,7 @@ class QuizAdmin(admin.ModelAdmin):
 
     def total_points_display(self, obj):
         """Affiche le score de passage calculé et le total"""
-        passing = float(obj.passing_score)
+        passing = float(obj.passing_percentage)
         total = float(obj.total_points)
         percentage = float(obj.passing_percentage)
         
@@ -491,7 +491,7 @@ class QuizAdmin(admin.ModelAdmin):
             return mark_safe('<p style="color: gray;">Aucune tentative complétée pour le moment</p>')
         
         avg_score = completed.aggregate(avg=Avg('score'))['avg'] or 0
-        passed = completed.filter(score__gte=obj.passing_score).count()
+        passed = completed.filter(score__gte=obj.passing_percentage).count()
         pass_rate = (passed / completed.count() * 100) if completed.count() > 0 else 0
         
         html = f"""
@@ -561,7 +561,7 @@ class QuizAdmin(admin.ModelAdmin):
             attempts = QuizAttempt.objects.filter(quiz=quiz)
             completed = attempts.filter(status='COMPLETED')
             avg_score = completed.aggregate(avg=Avg('score'))['avg'] or 0
-            passed = completed.filter(score__gte=quiz.passing_score).count()
+            passed = completed.filter(score__gte=quiz.passing_percentage).count()
             pass_rate = (passed / completed.count() * 100) if completed.count() > 0 else 0
             
             writer.writerow([
@@ -604,7 +604,7 @@ class QuizAdmin(admin.ModelAdmin):
         
         if completed.count() > 0:
             avg_score = completed.aggregate(avg=Avg('score'))['avg'] or 0
-            passed = completed.filter(score__gte=quiz.passing_score).count()
+            passed = completed.filter(score__gte=quiz.passing_percentage).count()
             stats['average_score'] = avg_score
             stats['pass_rate'] = (passed / completed.count() * 100)
             stats['passed_count'] = passed
