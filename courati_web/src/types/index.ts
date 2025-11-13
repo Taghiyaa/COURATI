@@ -165,7 +165,7 @@ export interface CreateTeacherDTO {
 // Student types
 export interface Student {
   id: number;              // ID du StudentProfile
-  user_id: number;         // ✅ ID du User (à utiliser pour les routes API)
+  user_id?: number;        // ID du User (pour compatibilité)
   username?: string;
   email?: string;
   first_name?: string;
@@ -180,11 +180,18 @@ export interface Student {
   enrollment_date?: string;
   created_at?: string;
   updated_at?: string;
+  date_joined?: string;
   // Relations
   level?: Level;
   level_id?: number;
+  level_name?: string;     // Nom du niveau depuis l'API
   major?: Major;
   major_id?: number;
+  major_name?: string;     // Nom de la filière depuis l'API
+  // Statistiques
+  total_documents_viewed?: number;
+  total_quiz_attempts?: number;
+  last_activity?: string;
   // Format backend avec user imbriqué
   user?: {
     id: number;
@@ -206,8 +213,8 @@ export interface CreateStudentDTO {
   phone_number?: string;
   date_of_birth?: string;
   address?: string;
-  level_id?: number;
-  major_id?: number;
+  level: number;    // ✅ Changé de level_id vers level
+  major: number;    // ✅ Changé de major_id vers major
 }
 
 export interface UpdateStudentDTO {
@@ -218,8 +225,8 @@ export interface UpdateStudentDTO {
   phone_number?: string;
   date_of_birth?: string;
   address?: string;
-  level_id?: number;
-  major_id?: number;
+  level?: number;    // ✅ Changé de level_id vers level
+  major?: number;    // ✅ Changé de major_id vers major
   is_active?: boolean;
 }
 

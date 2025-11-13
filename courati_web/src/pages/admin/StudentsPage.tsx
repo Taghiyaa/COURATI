@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Edit, Trash2, UserCheck, UserX, Users, Download, CheckSquare } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, UserCheck, UserX, Users, Download } from 'lucide-react';
 import { studentsAPI } from '../../api/students';
 import { levelsAPI } from '../../api/levels';
 import { majorsAPI } from '../../api/majors';
@@ -20,67 +20,76 @@ export default function StudentsPage() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   // Récupérer les étudiants
-  const { data: students, isLoading, error } = useQuery({
-    queryKey: ['students', filterLevel, filterMajor, filterActive],
+  const { 
+    data: response, 
+    isLoading, 
+    error
+  } = useQuery({
+    queryKey: ['students', searchTerm, filterLevel, filterMajor, filterActive],
+    enabled: true,
     queryFn: async () => {
       try {
-        const response = await studentsAPI.getAll({
+        const params = {
+          search: searchTerm || undefined,
           level_id: filterLevel,
           major_id: filterMajor,
           is_active: filterActive,
-        });
-        console.log('📦 Réponse brute API:', response);
+        };
         
-        // Extraire le tableau d'étudiants
-        let studentsList = [];
-        if (Array.isArray(response)) {
-          studentsList = response;
-        } else if (response?.students) {
-          studentsList = response.students;
-        } else if (response?.results) {
-          studentsList = response.results;
-        } else if (response?.data) {
-          studentsList = Array.isArray(response.data) ? response.data : [];
-        }
+        console.log('🔍 Paramètres envoyés à l\'API:', params);
         
-        console.log('👥 Liste étudiants extraite:', studentsList);
-        return studentsList;
-      } catch (err) {
-        console.error('❌ Erreur récupération étudiants:', err);
-        throw err;
+        const response = await studentsAPI.getAll(params);
+        console.log('📦 Réponse API étudiants:', response);
+        return response;
+      } catch (error) {
+        console.error('❌ Erreur récupération étudiants:', error);
+        throw error;
       }
     },
   });
 
+  // Extraire la liste des étudiants
+  const students = useMemo(() => {
+    if (!response) return [];
+    if (Array.isArray(response)) return response;
+    if (response?.students) return response.students;
+    if (response?.results) return response.results;
+    if (response?.data) return Array.isArray(response.data) ? response.data : [];
+    console.warn('Format de réponse inattendu:', response);
+    return [];
+  }, [response]);
+
   // Charger niveaux et filières pour les filtres
   const { data: levels = [] } = useQuery({
     queryKey: ['levels'],
-    queryFn: levelsAPI.getAll,
+    queryFn: async () => {
+      try {
+        const response = await levelsAPI.getAll();
+        console.log('📚 Niveaux récupérés:', response);
+        return response;
+      } catch (error) {
+        console.error('❌ Erreur récupération niveaux:', error);
+        throw error;
+      }
+    },
   });
 
   const { data: majors = [] } = useQuery({
     queryKey: ['majors'],
-    queryFn: majorsAPI.getAll,
+    queryFn: async () => {
+      try {
+        const response = await majorsAPI.getAll();
+        console.log('🎓 Filières récupérées:', response);
+        return response;
+      } catch (error) {
+        console.error('❌ Erreur récupération filières:', error);
+        throw error;
+      }
+    },
   });
 
-  // Filtrer côté client
-  const filteredStudents = useMemo(() => {
-    if (!students) return [];
-    if (!searchTerm) return students;
-    
-    const search = searchTerm.toLowerCase();
-    return students.filter((student: Student) => {
-      const firstName = student.first_name || student.user?.first_name || '';
-      const lastName = student.last_name || student.user?.last_name || '';
-      const username = student.username || student.user?.username || '';
-      const email = student.email || student.user?.email || '';
-      
-      return firstName.toLowerCase().includes(search) ||
-             lastName.toLowerCase().includes(search) ||
-             username.toLowerCase().includes(search) ||
-             email.toLowerCase().includes(search);
-    });
-  }, [students, searchTerm]);
+  // Utiliser directement les étudiants filtrés côté serveur
+  const filteredStudents = students || [];
 
   // Mutation pour supprimer
   const deleteMutation = useMutation({
@@ -157,8 +166,8 @@ export default function StudentsPage() {
   };
 
   const handleToggleActive = (student: Student) => {
-    console.log('🔄 Toggle active pour étudiant user_id:', student.user_id);
-    toggleActiveMutation.mutate(student.user_id);
+    console.log('🔄 Toggle active pour étudiant id:', student.id);
+    toggleActiveMutation.mutate(student.id);
   };
 
   const handleEdit = (student: Student) => {
@@ -180,7 +189,7 @@ export default function StudentsPage() {
     if (selectedIds.length === filteredStudents.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(filteredStudents.map((s: Student) => s.user_id));
+      setSelectedIds(filteredStudents.map((s: Student) => s.id));
     }
   };
 
@@ -206,11 +215,15 @@ export default function StudentsPage() {
 
   const handleExport = async () => {
     try {
+      console.log('📥 Début export CSV avec filtres:', { filterLevel, filterMajor, filterActive });
+      
       const blob = await studentsAPI.exportCSV({
         level_id: filterLevel,
         major_id: filterMajor,
         is_active: filterActive,
       });
+      
+      console.log('✅ Blob reçu:', blob);
       
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -222,8 +235,13 @@ export default function StudentsPage() {
       document.body.removeChild(a);
       
       toast.success('Export réussi');
-    } catch (error) {
-      toast.error('Erreur lors de l\'export');
+    } catch (error: any) {
+      console.error('❌ Erreur export:', error);
+      const errorMsg = error.response?.data?.message || 
+                       error.response?.data?.error ||
+                       error.message ||
+                       'Erreur lors de l\'export';
+      toast.error(errorMsg);
     }
   };
 
@@ -278,7 +296,11 @@ export default function StudentsPage() {
           {/* Filtre Niveau */}
           <select
             value={filterLevel || ''}
-            onChange={(e) => setFilterLevel(e.target.value ? Number(e.target.value) : undefined)}
+            onChange={(e) => {
+              const newValue = e.target.value ? Number(e.target.value) : undefined;
+              console.log('🏫 Changement filtre niveau:', newValue);
+              setFilterLevel(newValue);
+            }}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
           >
             <option value="">Tous les niveaux</option>
@@ -290,7 +312,11 @@ export default function StudentsPage() {
           {/* Filtre Filière */}
           <select
             value={filterMajor || ''}
-            onChange={(e) => setFilterMajor(e.target.value ? Number(e.target.value) : undefined)}
+            onChange={(e) => {
+              const newValue = e.target.value ? Number(e.target.value) : undefined;
+              console.log('🎓 Changement filtre filière:', newValue);
+              setFilterMajor(newValue);
+            }}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
           >
             <option value="">Toutes les filières</option>
@@ -388,19 +414,21 @@ export default function StudentsPage() {
             </thead>
             <tbody>
               {filteredStudents.map((student: Student) => {
-                const firstName = student.first_name || student.user?.first_name || '';
-                const lastName = student.last_name || student.user?.last_name || '';
-                const username = student.username || student.user?.username || '';
-                const email = student.email || student.user?.email || '';
-                const isActive = student.is_active ?? student.user?.is_active ?? true;
+                const firstName = student.first_name || '';
+                const lastName = student.last_name || '';
+                const username = student.username || '';
+                const email = student.email || '';
+                const isActive = student.is_active ?? true;
+                const levelName = student.level_name || student.level?.name || '-';
+                const majorName = student.major_name || student.major?.name || '-';
                 
                 return (
                   <tr key={student.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                     <td className="py-3 px-4">
                       <input
                         type="checkbox"
-                        checked={selectedIds.includes(student.user_id)}
-                        onChange={() => handleSelectOne(student.user_id)}
+                        checked={selectedIds.includes(student.id)}
+                        onChange={() => handleSelectOne(student.id)}
                         className="h-4 w-4 text-primary-600 rounded"
                       />
                     </td>
@@ -414,10 +442,10 @@ export default function StudentsPage() {
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600">{email}</td>
                     <td className="py-3 px-4 text-sm text-gray-600">
-                      {student.level?.name || '-'}
+                      {levelName}
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600">
-                      {student.major?.name || '-'}
+                      {majorName}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <span
@@ -459,7 +487,7 @@ export default function StudentsPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDelete(student.user_id, `${firstName} ${lastName}`);
+                            handleDelete(student.id, `${firstName} ${lastName}`);
                           }}
                           disabled={deleteMutation.isPending}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"

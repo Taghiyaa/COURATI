@@ -23,8 +23,8 @@ export default function StudentModal({ student, onClose, onSuccess }: StudentMod
     phone_number: '',
     date_of_birth: '',
     address: '',
-    level_id: '',
-    major_id: '',
+    level: '',
+    major: '',
   });
 
   // Charger les niveaux et filières
@@ -41,18 +41,38 @@ export default function StudentModal({ student, onClose, onSuccess }: StudentMod
   // Pré-remplir le formulaire en mode édition
   useEffect(() => {
     if (student) {
+      console.log('🔍 DONNÉES COMPLÈTES DE L\'ÉTUDIANT:', student);
+      
+      const studentData = student as any;
+      
+      // ✅ Extraire l'ID du level
+      const levelId = studentData.level_id?.toString() || 
+                      (typeof studentData.level === 'number' ? studentData.level.toString() : '') ||
+                      studentData.level?.id?.toString() || 
+                      '';
+      
+      // ✅ Extraire l'ID du major
+      const majorId = studentData.major_id?.toString() || 
+                      (typeof studentData.major === 'number' ? studentData.major.toString() : '') ||
+                      studentData.major?.id?.toString() || 
+                      '';
+      
+      console.log('📋 IDs extraits:', { levelId, majorId });
+      
       setFormData({
-        username: student.username || student.user?.username || '',
-        email: student.email || student.user?.email || '',
+        username: studentData.username || studentData.user?.username || '',
+        email: studentData.email || studentData.user?.email || '',
         password: '',
-        first_name: student.first_name || student.user?.first_name || '',
-        last_name: student.last_name || student.user?.last_name || '',
-        phone_number: student.phone_number || student.phone || '',
-        date_of_birth: student.date_of_birth || '',
-        address: student.address || '',
-        level_id: student.level_id?.toString() || '',
-        major_id: student.major_id?.toString() || '',
+        first_name: studentData.first_name || studentData.user?.first_name || '',
+        last_name: studentData.last_name || studentData.user?.last_name || '',
+        phone_number: studentData.phone_number || studentData.phone || '',
+        date_of_birth: studentData.date_of_birth || '',
+        address: studentData.address || '',
+        level: levelId,
+        major: majorId,
       });
+      
+      console.log('✅ FormData initialisé avec:', { level: levelId, major: majorId });
     }
   }, [student]);
 
@@ -65,8 +85,8 @@ export default function StudentModal({ student, onClose, onSuccess }: StudentMod
         // Mode édition - ne pas envoyer username et password
         const { username, password, ...updateData } = data as any;
         console.log('✏️ Mode édition, données:', updateData);
-        console.log('🔑 Utilisation user_id:', student.user_id);
-        const result = await studentsAPI.update(student.user_id, updateData);
+        console.log('🔑 Utilisation student.id:', student.id);
+        const result = await studentsAPI.update(student.id, updateData);
         console.log('✅ Étudiant modifié:', result);
         return result;
       } else {
@@ -87,6 +107,12 @@ export default function StudentModal({ student, onClose, onSuccess }: StudentMod
       // Extraire le message d'erreur
       let errorMessage = 'Une erreur est survenue';
       
+      console.log('🔍 Détails de l\'erreur:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
+      
       if (error.response?.data) {
         const data = error.response.data;
         
@@ -99,9 +125,24 @@ export default function StudentModal({ student, onClose, onSuccess }: StudentMod
           errorMessage = data.error;
         } else if (data.detail) {
           errorMessage = data.detail;
+        } else if (data.errors) {
+          // Format { success: false, errors: {...} }
+          const fieldErrors = Object.entries(data.errors)
+            .map(([field, errors]) => {
+              if (Array.isArray(errors)) {
+                return `${field}: ${errors.join(', ')}`;
+              }
+              return `${field}: ${errors}`;
+            })
+            .join('\n');
+          
+          if (fieldErrors) {
+            errorMessage = fieldErrors;
+          }
         } else {
-          // Erreurs de validation par champ
+          // Erreurs de validation par champ directement
           const fieldErrors = Object.entries(data)
+            .filter(([key]) => !['success', 'message', 'error', 'detail'].includes(key))
             .map(([field, errors]) => {
               if (Array.isArray(errors)) {
                 return `${field}: ${errors.join(', ')}`;
@@ -136,6 +177,17 @@ export default function StudentModal({ student, onClose, onSuccess }: StudentMod
       return;
     }
 
+    // Validation des champs requis
+    if (!formData.level) {
+      toast.error('Veuillez sélectionner un niveau');
+      return;
+    }
+    
+    if (!formData.major) {
+      toast.error('Veuillez sélectionner une filière');
+      return;
+    }
+
     // Préparer les données
     const data: any = {
       username: formData.username,
@@ -145,9 +197,17 @@ export default function StudentModal({ student, onClose, onSuccess }: StudentMod
       phone_number: formData.phone_number || undefined,
       date_of_birth: formData.date_of_birth || undefined,
       address: formData.address || undefined,
-      level_id: formData.level_id ? Number(formData.level_id) : undefined,
-      major_id: formData.major_id ? Number(formData.major_id) : undefined,
+      level: parseInt(formData.level),
+      major: parseInt(formData.major),
     };
+    
+    console.log('📤 Données préparées pour envoi:', data);
+    console.log('🔍 Types des champs:', {
+      level: typeof data.level,
+      major: typeof data.major,
+      level_value: data.level,
+      major_value: data.major
+    });
 
     // Ajouter le password seulement en mode création
     if (!student) {
@@ -307,13 +367,14 @@ export default function StudentModal({ student, onClose, onSuccess }: StudentMod
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Niveau
+                  Niveau <span className="text-red-500">*</span>
                 </label>
                 <select
-                  name="level_id"
-                  value={formData.level_id}
+                  name="level"
+                  value={formData.level}
                   onChange={handleChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  required
                 >
                   <option value="">Sélectionner un niveau</option>
                   {levels.map((level: any) => (
@@ -326,13 +387,14 @@ export default function StudentModal({ student, onClose, onSuccess }: StudentMod
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Filière
+                  Filière <span className="text-red-500">*</span>
                 </label>
                 <select
-                  name="major_id"
-                  value={formData.major_id}
+                  name="major"
+                  value={formData.major}
                   onChange={handleChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  required
                 >
                   <option value="">Sélectionner une filière</option>
                   {majors.map((major: any) => (

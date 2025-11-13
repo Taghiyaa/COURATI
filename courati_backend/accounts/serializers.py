@@ -806,7 +806,7 @@ class StudentCreateSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(max_length=150)
     last_name = serializers.CharField(max_length=150)
     
-    # Champs du profil StudentProfile (qui existent dans votre modèle)
+    # Champs du profil StudentProfile
     level = serializers.PrimaryKeyRelatedField(
         queryset=Level.objects.all(),
         required=True
@@ -816,9 +816,8 @@ class StudentCreateSerializer(serializers.ModelSerializer):
         required=True
     )
     phone_number = serializers.CharField(
-        max_length=20,
-        required=False,
-        allow_blank=True
+        max_length=15,
+        required=True  # ✅ OBLIGATOIRE car unique dans le modèle
     )
     
     class Meta:
@@ -841,12 +840,18 @@ class StudentCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Cet email est déjà utilisé.")
         return value
     
+    def validate_phone_number(self, value):
+        """Vérifier l'unicité du téléphone"""
+        if StudentProfile.objects.filter(phone_number=value).exists():
+            raise serializers.ValidationError("Ce numéro de téléphone est déjà utilisé.")
+        return value
+    
     def create(self, validated_data):
         """Créer l'utilisateur et son profil étudiant"""
         # Extraire les champs du profil
         level = validated_data.pop('level')
         major = validated_data.pop('major')
-        phone_number = validated_data.pop('phone_number', '')
+        phone_number = validated_data.pop('phone_number')
         
         # Extraire le mot de passe
         password = validated_data.pop('password')
@@ -882,7 +887,7 @@ class StudentUpdateSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=False)
     is_active = serializers.BooleanField(required=False)
     
-    # Champs du StudentProfile
+    # Champs du StudentProfile (SEULEMENT ceux qui existent)
     level = serializers.PrimaryKeyRelatedField(
         queryset=Level.objects.filter(is_active=True),
         required=False
@@ -891,19 +896,13 @@ class StudentUpdateSerializer(serializers.ModelSerializer):
         queryset=Major.objects.filter(is_active=True),
         required=False
     )
-    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    student_id = serializers.CharField(max_length=50, required=False, allow_blank=True)
-    date_of_birth = serializers.DateField(required=False, allow_null=True)
-    address = serializers.CharField(required=False, allow_blank=True)
-    emergency_contact = serializers.CharField(max_length=100, required=False, allow_blank=True)
-    emergency_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    phone_number = serializers.CharField(max_length=15, required=False)
     
     class Meta:
         model = User
         fields = [
             'first_name', 'last_name', 'email', 'is_active',
-            'level', 'major', 'phone_number', 'student_id', 'date_of_birth',
-            'address', 'emergency_contact', 'emergency_phone'
+            'level', 'major', 'phone_number'
         ]
     
     def validate_email(self, value):
@@ -913,21 +912,17 @@ class StudentUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Cet email est déjà utilisé.")
         return value
     
-    def validate_student_id(self, value):
-        """Vérifier l'unicité du numéro étudiant"""
-        if value:
-            instance = self.instance
-            if StudentProfile.objects.filter(student_id=value).exclude(user=instance).exists():
-                raise serializers.ValidationError("Ce numéro étudiant existe déjà.")
+    def validate_phone_number(self, value):
+        """Vérifier l'unicité du téléphone"""
+        instance = self.instance
+        if StudentProfile.objects.filter(phone_number=value).exclude(user=instance).exists():
+            raise serializers.ValidationError("Ce numéro de téléphone est déjà utilisé.")
         return value
     
     def update(self, instance, validated_data):
         """Mettre à jour l'utilisateur et son profil"""
         # Extraire les champs du profil
-        profile_fields = [
-            'level', 'major', 'phone_number', 'student_id', 'date_of_birth',
-            'address', 'emergency_contact', 'emergency_phone'
-        ]
+        profile_fields = ['level', 'major', 'phone_number']
         
         profile_data = {}
         for field in profile_fields:
@@ -954,7 +949,6 @@ class StudentAdminListSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     level_name = serializers.CharField(source='student_profile.level.name', read_only=True)
     major_name = serializers.CharField(source='student_profile.major.name', read_only=True)
-    student_id = serializers.CharField(source='student_profile.student_id', read_only=True)
     phone_number = serializers.CharField(source='student_profile.phone_number', read_only=True)
     
     # Statistiques
@@ -973,8 +967,7 @@ class StudentAdminListSerializer(serializers.ModelSerializer):
             'last_name',
             'level_name',
             'major_name',
-            'student_id',
-            'phone_number',
+            'phone_number',  # ✅ Plus de student_id
             'is_active',
             'date_joined',
             'total_documents_viewed',
@@ -1002,21 +995,20 @@ class StudentAdminListSerializer(serializers.ModelSerializer):
         return last.created_at if last else None
 
 
-# accounts/serializers.py
-
 class StudentAdminDetailSerializer(serializers.ModelSerializer):
     """Serializer détaillé pour un étudiant (Admin)"""
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     
-    # Profil
+    # Profil - Objets complets
     level = LevelSerializer(source='student_profile.level', read_only=True)
     major = MajorSerializer(source='student_profile.major', read_only=True)
+    
+    # ✅ CORRECTION : Gérer les cas où level ou major sont None
+    level_id = serializers.SerializerMethodField()
+    major_id = serializers.SerializerMethodField()
+    
     phone_number = serializers.CharField(source='student_profile.phone_number', read_only=True)
-    student_id = serializers.CharField(source='student_profile.student_id', read_only=True)
-    date_of_birth = serializers.DateField(source='student_profile.date_of_birth', read_only=True)
-    address = serializers.CharField(source='student_profile.address', read_only=True)
-    emergency_contact = serializers.CharField(source='student_profile.emergency_contact', read_only=True)
-    emergency_phone = serializers.CharField(source='student_profile.emergency_phone', read_only=True)
+    is_verified = serializers.BooleanField(source='student_profile.is_verified', read_only=True)
     
     # Statistiques détaillées
     statistics = serializers.SerializerMethodField()
@@ -1028,10 +1020,28 @@ class StudentAdminDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'full_name', 'first_name', 'last_name',
             'is_active', 'date_joined', 'last_login',
-            'level', 'major', 'phone_number', 'student_id', 'date_of_birth',
-            'address', 'emergency_contact', 'emergency_phone',
+            'level', 'major', 'level_id', 'major_id',
+            'phone_number', 'is_verified',
             'statistics', 'recent_activities', 'quiz_performance'
         ]
+    
+    def get_level_id(self, obj):
+        """Récupérer l'ID du niveau de manière sécurisée"""
+        try:
+            if hasattr(obj, 'student_profile') and obj.student_profile.level:
+                return obj.student_profile.level.id
+        except Exception as e:
+            logger.error(f"❌ Erreur get_level_id: {str(e)}")
+        return None
+    
+    def get_major_id(self, obj):
+        """Récupérer l'ID de la filière de manière sécurisée"""
+        try:
+            if hasattr(obj, 'student_profile') and obj.student_profile.major:
+                return obj.student_profile.major.id
+        except Exception as e:
+            logger.error(f"❌ Erreur get_major_id: {str(e)}")
+        return None
     
     def get_statistics(self, obj):
         """Statistiques globales de l'étudiant"""
@@ -1058,11 +1068,9 @@ class StudentAdminDetailSerializer(serializers.ModelSerializer):
                 for attempt in completed_attempts.select_related('quiz'):
                     total_points = attempt.quiz.total_points
                     if total_points and total_points > 0:
-                        # Score normalisé sur 20
                         normalized = (float(attempt.score) / float(total_points)) * 20
                         scores.append(normalized)
                         
-                        # Vérifier si passé (comparer avec le pourcentage requis)
                         percentage = (float(attempt.score) / float(total_points)) * 100
                         if percentage >= float(attempt.quiz.passing_percentage):
                             passed += 1
@@ -1186,7 +1194,6 @@ class StudentAdminDetailSerializer(serializers.ModelSerializer):
         except Exception as e:
             logger.error(f"❌ Erreur get_quiz_performance: {str(e)}")
             return []
-
 
 class StudentStatisticsSerializer(serializers.Serializer):
     """Statistiques détaillées d'un étudiant"""

@@ -1778,17 +1778,17 @@ class AdminStudentListCreateView(APIView):
             if is_active is not None:
                 queryset = queryset.filter(is_active=is_active.lower() == 'true')
             
-            # Filtrer par niveau
-            level_id = request.GET.get('level', None)
+            # Filtrer par niveau - ✅ Accepte 'level' OU 'level_id'
+            level_id = request.GET.get('level') or request.GET.get('level_id')
             if level_id:
                 queryset = queryset.filter(student_profile__level_id=level_id)
             
-            # Filtrer par filière
-            major_id = request.GET.get('major', None)
+            # Filtrer par filière - ✅ Accepte 'major' OU 'major_id'
+            major_id = request.GET.get('major') or request.GET.get('major_id')
             if major_id:
                 queryset = queryset.filter(student_profile__major_id=major_id)
             
-            # Recherche par nom, email ou numéro étudiant
+            # Recherche par nom, email, username ou téléphone
             search = request.GET.get('search', None)
             if search:
                 queryset = queryset.filter(
@@ -1796,7 +1796,7 @@ class AdminStudentListCreateView(APIView):
                     Q(last_name__icontains=search) |
                     Q(email__icontains=search) |
                     Q(username__icontains=search) |
-                    Q(student_profile__student_id__icontains=search)
+                    Q(student_profile__phone_number__icontains=search)
                 )
             
             # Tri
@@ -1839,6 +1839,7 @@ class AdminStudentListCreateView(APIView):
     def post(self, request):
         """Créer un nouvel étudiant"""
         logger.info(f"➕ Création étudiant par admin: {request.user.username}")
+        logger.info(f"📦 Données reçues: {request.data}")  # ✅ AJOUTÉ pour déboguer
         
         serializer = StudentCreateSerializer(data=request.data)
         
@@ -1859,17 +1860,21 @@ class AdminStudentListCreateView(APIView):
                 
             except Exception as e:
                 logger.error(f"❌ Erreur création étudiant: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                
                 return Response({
                     'success': False,
                     'error': 'Erreur lors de la création',
                     'details': str(e)
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
+        logger.error(f"❌ Erreurs de validation: {serializer.errors}")  # ✅ AJOUTÉ
+        
         return Response({
             'success': False,
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
-
 
 class AdminStudentDetailView(APIView):
     """
@@ -2296,18 +2301,16 @@ class AdminStudentExportView(APIView):
             
             writer = csv.writer(response)
             
-            # En-têtes
+            # En-têtes (sans "Numéro étudiant")
             writer.writerow([
                 'ID',
                 'Nom d\'utilisateur',
                 'Email',
                 'Prénom',
                 'Nom',
-                'Numéro étudiant',
                 'Niveau',
                 'Filière',
                 'Téléphone',
-                'Date de naissance',
                 'Actif',
                 'Date d\'inscription'
             ])
@@ -2334,17 +2337,16 @@ class AdminStudentExportView(APIView):
             
             # Écrire les données
             for student in queryset:
+                profile = student.student_profile if hasattr(student, 'student_profile') else None
                 writer.writerow([
                     student.id,
                     student.username,
                     student.email,
                     student.first_name,
                     student.last_name,
-                    student.student_profile.student_id,
-                    student.student_profile.level.name if student.student_profile.level else '',
-                    student.student_profile.major.name if student.student_profile.major else '',
-                    student.student_profile.phone_number,
-                    student.student_profile.date_of_birth.strftime('%Y-%m-%d') if student.student_profile.date_of_birth else '',
+                    profile.level.name if profile and profile.level else '',
+                    profile.major.name if profile and profile.major else '',
+                    profile.phone_number if profile else '',
                     'Oui' if student.is_active else 'Non',
                     student.date_joined.strftime('%Y-%m-%d %H:%M')
                 ])
@@ -2355,10 +2357,11 @@ class AdminStudentExportView(APIView):
             
         except Exception as e:
             logger.error(f"❌ Erreur export étudiants: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
             return Response({
                 'success': False,
                 'error': 'Erreur serveur',
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
