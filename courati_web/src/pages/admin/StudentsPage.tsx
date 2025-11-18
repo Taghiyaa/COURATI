@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import StudentModal from '../../components/students/StudentModal';
 import type { Student } from '../../types';
+import { Link } from 'react-router-dom';
 
 export default function StudentsPage() {
   const queryClient = useQueryClient();
@@ -434,9 +435,9 @@ export default function StudentsPage() {
                     </td>
                     <td className="py-3 px-4">
                       <div>
-                        <p className="font-medium text-gray-900">
+                        <Link to={`/admin/students/${student.id}`} className="font-medium text-primary-600 hover:underline">
                           {firstName} {lastName}
-                        </p>
+                        </Link>
                         <p className="text-sm text-gray-500">@{username}</p>
                       </div>
                     </td>
@@ -479,7 +480,7 @@ export default function StudentsPage() {
                             e.stopPropagation();
                             handleEdit(student);
                           }}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
                           title="Modifier"
                         >
                           <Edit className="h-4 w-4" />

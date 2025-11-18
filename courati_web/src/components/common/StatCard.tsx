@@ -5,8 +5,8 @@ interface StatCardProps {
   title: string;
   value: number | string;
   icon: LucideIcon;
-  color: 'blue' | 'green' | 'purple' | 'orange' | 'red';
-  trend?: number;
+  color: 'blue' | 'green' | 'purple' | 'orange' | 'red' | 'indigo' | 'teal' | 'yellow' | 'primary';
+  trend?: number | string;
 }
 
 const colorClasses = {
@@ -15,6 +15,10 @@ const colorClasses = {
   purple: 'bg-purple-100 text-purple-600',
   orange: 'bg-orange-100 text-orange-600',
   red: 'bg-red-100 text-red-600',
+  indigo: 'bg-indigo-100 text-indigo-600',
+  teal: 'bg-teal-100 text-teal-600',
+  yellow: 'bg-yellow-100 text-yellow-600',
+  primary: 'bg-primary-100 text-primary-600',
 };
 
 export default function StatCard({ title, value, icon: Icon, color, trend }: StatCardProps) {
@@ -27,8 +31,14 @@ export default function StatCard({ title, value, icon: Icon, color, trend }: Sta
           <p className="text-sm text-gray-600 mb-1">{title}</p>
           <p className="text-2xl font-bold text-gray-900">{displayValue}</p>
           {trend !== undefined && (
-            <p className={`text-sm mt-1 ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {trend >= 0 ? '↗' : '↘'} {Math.abs(trend)}% vs mois dernier
+            <p className="text-sm mt-1 text-gray-600">
+              {typeof trend === 'number' ? (
+                <span className={trend >= 0 ? 'text-green-600' : 'text-red-600'}>
+                  {trend >= 0 ? '↗' : '↘'} {Math.abs(trend)}% vs mois dernier
+                </span>
+              ) : (
+                <span>{trend}</span>
+              )}
             </p>
           )}
         </div>

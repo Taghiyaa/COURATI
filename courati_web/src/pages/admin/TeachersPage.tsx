@@ -335,7 +335,7 @@ export default function TeachersPage() {
                           e.stopPropagation();
                           handleEdit(teacher);
                         }}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
                         title="Modifier"
                       >
                         <Edit className="h-4 w-4" />

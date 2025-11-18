@@ -114,7 +114,7 @@ export default function LevelsPage() {
                 .map((level: Level) => (
                   <tr key={level.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                     <td className="py-3 px-4">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium bg-blue-100 text-blue-800">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium bg-primary-100 text-primary-800">
                         {level.code}
                       </span>
                     </td>
@@ -127,7 +127,7 @@ export default function LevelsPage() {
                       <div className="flex items-center justify-end space-x-2">
                         <button
                           onClick={() => handleEdit(level)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
                           title="Modifier"
                         >
                           <Edit className="h-4 w-4" />

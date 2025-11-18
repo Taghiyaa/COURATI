@@ -1465,7 +1465,7 @@ class AdminDashboardView(APIView):
             # =====================================
             
             top_subjects_data = Subject.objects.annotate(
-                document_count=Count('documents', filter=Q(documents__is_active=True)),
+                document_count=Count('documents', filter=Q(documents__is_active=True), distinct=True),
                 view_count=Count('activities', filter=Q(activities__action='view')),
                 download_count=Count('activities', filter=Q(activities__action='download'))
             ).order_by('-view_count')[:5]
@@ -1497,12 +1497,13 @@ class AdminDashboardView(APIView):
             } for d in top_documents_data]
             
             # =====================================
-            # 7. PERFORMANCE DES QUIZ
+            # 7. PERFORMANCE DES QUIZ (corrigé)
             # =====================================
-            
+
             total_attempts = QuizAttempt.objects.count()
             completed_attempts = QuizAttempt.objects.filter(status='COMPLETED').count()
-            
+
+            # Calcul de la note moyenne (normalisée sur 20)
             avg_score_data = QuizAttempt.objects.filter(
                 status='COMPLETED'
             ).select_related('quiz')
@@ -1511,28 +1512,29 @@ class AdminDashboardView(APIView):
             if avg_score_data.exists():
                 scores = []
                 for attempt in avg_score_data:
-                    total = attempt.quiz.total_points  # ✅ Utiliser la propriété
+                    total = attempt.quiz.total_points
                     if total > 0:
                         normalized = (float(attempt.score) / float(total)) * 20
                         scores.append(normalized)
                 
                 if scores:
                     average_score = round(sum(scores) / len(scores), 2)
-            
-            
-            
+
             # Taux de réussite global
             completed = QuizAttempt.objects.filter(status='COMPLETED').select_related('quiz')
 
             passed = 0
             for attempt in completed:
-                if attempt.score >= attempt.quiz.passing_percentage:
-                    passed += 1
+                total = attempt.quiz.total_points
+                if total > 0:
+                    score_percentage = (float(attempt.score) / float(total)) * 100
+                    if score_percentage >= attempt.quiz.passing_percentage:
+                        passed += 1
 
             pass_rate = 0
             if completed.count() > 0:
                 pass_rate = round((passed / completed.count()) * 100, 1)
-            
+
             # Quiz les plus difficiles (taux de réussite le plus bas)
             hardest_quizzes = []
             quizzes_with_attempts = Quiz.objects.annotate(
@@ -1540,23 +1542,22 @@ class AdminDashboardView(APIView):
             ).filter(attempt_count__gte=3)  # Au moins 3 tentatives
 
             for quiz in quizzes_with_attempts:
-                # Récupérer toutes les tentatives complétées
                 completed_quiz_attempts = QuizAttempt.objects.filter(
                     quiz=quiz,
                     status='COMPLETED'
                 )
-                
                 completed_count = completed_quiz_attempts.count()
-                
+
                 if completed_count > 0:
-                    # Compter manuellement les tentatives réussies
                     passed_quiz = 0
                     for attempt in completed_quiz_attempts:
-                        if attempt.score >= quiz.passing_percentage:  # ✅ Utiliser dans Python, pas dans filter()
-                            passed_quiz += 1
-                    
+                        total = attempt.quiz.total_points
+                        if total > 0:
+                            score_percentage = (float(attempt.score) / float(total)) * 100
+                            if score_percentage >= attempt.quiz.passing_percentage:
+                                passed_quiz += 1
+
                     quiz_pass_rate = (passed_quiz / completed_count) * 100
-                    
                     hardest_quizzes.append({
                         'quiz_id': quiz.id,
                         'title': quiz.title,
@@ -1567,14 +1568,14 @@ class AdminDashboardView(APIView):
 
             # Trier pour obtenir les 5 plus difficiles
             hardest_quizzes = sorted(hardest_quizzes, key=lambda x: x['pass_rate'])[:5]
-            
-            # Quiz les plus faciles
+
+            # Quiz les plus faciles (taux de réussite le plus élevé)
             easiest_quizzes = sorted(
                 [q for q in hardest_quizzes if q['pass_rate'] > 0],
                 key=lambda x: x['pass_rate'],
                 reverse=True
             )[:5]
-            
+
             quiz_performance = {
                 'total_attempts': total_attempts,
                 'completed_attempts': completed_attempts,
@@ -1583,6 +1584,7 @@ class AdminDashboardView(APIView):
                 'hardest_quizzes': hardest_quizzes,
                 'easiest_quizzes': easiest_quizzes
             }
+
             
             # =====================================
             # 8. ACTIVITÉS RÉCENTES
@@ -1691,11 +1693,9 @@ class AdminDashboardView(APIView):
             warnings = 0
             if pending_assignments > 5:
                 warnings += 1
-            if inactive_teachers > 3:
+            if inactive_teachers > 10:
                 warnings += 1
             if subjects_without_content > 5:
-                warnings += 1
-            if students_without_activity > total_students * 0.3:  # Plus de 30% inactifs
                 warnings += 1
             
             if warnings == 0:

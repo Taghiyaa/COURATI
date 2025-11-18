@@ -202,6 +202,14 @@ class DocumentSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     created_by_role = serializers.CharField(source='created_by.role', read_only=True)  # NOUVEAU
     document_type_display = serializers.CharField(source='get_document_type_display', read_only=True)
+    # ✅ AJOUT : Exposer file_size en bytes
+    file_size = serializers.IntegerField(read_only=True)
+    file_size_mb = serializers.ReadOnlyField()
+    
+    # ✅ AJOUT : Alias pour compatibilité frontend
+    views_count = serializers.IntegerField(source='view_count', read_only=True)
+    downloads_count = serializers.IntegerField(source='download_count', read_only=True)
+
     file_size_mb = serializers.ReadOnlyField()
     file_url = serializers.SerializerMethodField()
     is_favorite = serializers.SerializerMethodField()
@@ -214,8 +222,12 @@ class DocumentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'description', 'subject', 'subject_name', 
             'subject_code', 'document_type', 'document_type_display',
-            'file', 'file_url', 'file_size_mb', 'is_active', 'is_premium', 
+            'file', 'file_url', 'file_size',  # ✅ AJOUTÉ
+            'file_size_mb', 
+            'is_active', 'is_premium', 
             'download_count', 'view_count',
+            'views_count',  # ✅ AJOUTÉ (alias)
+            'downloads_count',  # ✅ AJOUTÉ (alias)
             'created_by', 'created_by_name', 'created_by_role',
             'is_favorite', 'user_progress', 'user_can_delete', 'is_viewed',
             'order', 'created_at', 'updated_at'
@@ -1614,8 +1626,10 @@ class QuizAdminListSerializer(serializers.ModelSerializer):
     subject_name = serializers.CharField(source='subject.name', read_only=True)
     subject_code = serializers.CharField(source='subject.code', read_only=True)
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
-    question_count = serializers.IntegerField(read_only=True)
-    total_attempts = serializers.IntegerField(read_only=True)
+    
+    # ✅ Ces champs utiliseront les propriétés du modèle
+    question_count = serializers.ReadOnlyField()
+    total_attempts = serializers.SerializerMethodField()
     
     class Meta:
         model = Quiz
@@ -1636,6 +1650,10 @@ class QuizAdminListSerializer(serializers.ModelSerializer):
             'available_from',
             'available_until'
         ]
+    
+    def get_total_attempts(self, obj):
+        """Compter les tentatives"""
+        return obj.attempts.count()
 
 
 class QuizAdminDetailSerializer(serializers.ModelSerializer):
@@ -1822,14 +1840,19 @@ class TeacherQuizAttemptListSerializer(serializers.ModelSerializer):
     
     def get_score_percentage(self, obj):
         """Calculer le pourcentage de score"""
-        if obj.quiz.total_points > 0:
+        # ✅ CORRECTION : Vérifier que total_points et score ne sont pas None
+        if obj.quiz.total_points and obj.quiz.total_points > 0 and obj.score is not None:
             return round((float(obj.score) / float(obj.quiz.total_points)) * 100, 1)
         return 0
     
     def get_is_passed(self, obj):
         """Vérifier si l'étudiant a réussi"""
         if obj.status == 'COMPLETED':
-            return obj.score >= obj.quiz.passing_percentage
+            # ✅ CORRECTION : Vérifier que total_points n'est pas None
+            if obj.quiz.total_points and obj.quiz.total_points > 0 and obj.score is not None:
+                percentage = (float(obj.score) / float(obj.quiz.total_points)) * 100
+                return percentage >= float(obj.quiz.passing_percentage)
+            return False
         return None
     
     def get_duration_seconds(self, obj):
@@ -1863,6 +1886,8 @@ class TeacherStudentProgressSerializer(serializers.Serializer):
     subjects_progress = serializers.ListField()
 
 
+# courses/serializers.py
+
 class DocumentUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour modifier un document (professeur)"""
     
@@ -1875,26 +1900,20 @@ class DocumentUpdateSerializer(serializers.ModelSerializer):
             'is_active'
         ]
     
-    def validate(self, data):
-        """Vérifier que le professeur a le droit de modifier"""
-        request = self.context.get('request')
-        document = self.instance
-        
-        if request and request.user.role == 'TEACHER':
-            # Vérifier que c'est son document
-            if document.created_by != request.user:
-                raise serializers.ValidationError(
-                    "Vous ne pouvez modifier que vos propres documents"
-                )
-            
-            # Vérifier qu'il a toujours accès à la matière
-            from accounts.permissions import has_subject_access
-            if not has_subject_access(request.user, document.subject):
-                raise serializers.ValidationError(
-                    "Vous n'avez plus accès à cette matière"
-                )
-        
-        return data
+    def validate_title(self, value):
+        """Le titre est obligatoire"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Le titre est obligatoire")
+        return value.strip()
+    
+    def validate_document_type(self, value):
+        """Valider le type de document"""
+        valid_types = ['COURS', 'TD', 'TP', 'ARCHIVE']
+        if value not in valid_types:
+            raise serializers.ValidationError(
+                f"Type invalide. Choisissez parmi: {', '.join(valid_types)}"
+            )
+        return value
 
 
 class SubjectUpdateByTeacherSerializer(serializers.ModelSerializer):

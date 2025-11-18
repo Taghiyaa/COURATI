@@ -14,6 +14,8 @@ export default function LoginPage() {
     password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [hasError, setHasError] = useState(false); // Suivre si une erreur s'est produite
 
   // Rediriger si déjà authentifié
   useEffect(() => {
@@ -22,37 +24,66 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, navigate]);
 
-  // Nettoyer les erreurs au démontage
+  // Synchroniser l'erreur du store avec l'erreur locale
   useEffect(() => {
-    return () => clearError();
-  }, [clearError]);
+    if (error) {
+      setLocalError(error);
+      setHasError(true);
+    }
+  }, [error]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
+    // Réinitialiser l'état d'erreur pour une nouvelle tentative
+    setHasError(false);
+    
+    // Nettoyer l'erreur locale avant la soumission
+    setLocalError(null);
+    clearError();
+    
     if (!formData.username || !formData.password) {
-      toast.error('Veuillez remplir tous les champs');
+      const msg = 'Veuillez remplir tous les champs';
+      setLocalError(msg);
+      setHasError(true);
+      toast.error(msg);
       return;
     }
 
     try {
       await login(formData.username, formData.password);
+      
+      // Succès : marquer qu'il n'y a pas d'erreur
+      setHasError(false);
+      setLocalError(null);
+      clearError();
       toast.success('Connexion réussie !');
-      navigate('/admin/dashboard');
+      
+      // Laisser un délai avant la redirection pour que le navigateur détecte le succès
+      // et propose d'enregistrer le mot de passe. Le délai de 1 seconde permet au navigateur
+      // de détecter que le formulaire a été soumis avec succès (pas d'erreur, pas de rechargement)
+      setTimeout(() => {
+        navigate('/admin/dashboard');
+      }, 1000);
     } catch (err: any) {
-      // Afficher le toast d'erreur avec durée plus longue
+      // Extraire le message d'erreur
       const errorMsg = err.response?.data?.detail || 
                       err.response?.data?.message || 
                       err.response?.data?.error ||
-                      error || 
+                      err.response?.data?.non_field_errors?.[0] ||
                       'Identifiants incorrects';
+      
+      // Afficher l'erreur localement (persiste jusqu'à nouvelle tentative)
+      setLocalError(errorMsg);
+      setHasError(true);
+      
+      // Afficher aussi un toast avec durée longue
       toast.error(errorMsg, {
-        duration: 6000, // 6 secondes
+        duration: 8000, // 8 secondes
       });
       console.error('Login error:', err);
       
-      // Ne pas vider les champs en cas d'erreur
       // Les champs restent remplis pour que l'utilisateur puisse corriger
     }
   };
@@ -62,30 +93,26 @@ export default function LoginPage() {
       ...prev,
       [e.target.name]: e.target.value,
     }));
-    // Ne pas effacer l'erreur automatiquement pour que l'utilisateur puisse la lire
+    // Ne pas effacer l'erreur automatiquement quand l'utilisateur tape
+  };
+
+  const handleCloseError = () => {
+    setLocalError(null);
+    clearError();
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-500 via-primary-600 to-secondary-600 px-4 py-12">
-      {/* Overlay avec pattern */}
-      <div className="absolute inset-0 bg-black/10 backdrop-blur-[1px]" />
-      
+    <div className="min-h-screen flex items-center justify-center bg-white px-4 py-12">
       <div className="relative w-full max-w-md">
-        {/* Logo et titre */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center mb-4">
-            <Logo size="lg" className="shadow-xl" />
+        {/* Logo centré - plus grand */}
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center">
+            <Logo size="xl" />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-2">
-            Courati
-          </h1>
-          <p className="text-primary-100 text-lg">
-            Plateforme Éducative Mauritanienne
-          </p>
         </div>
 
         {/* Carte de connexion */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
               Connexion
@@ -95,22 +122,30 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Erreur globale */}
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg relative">
+          {/* Erreur globale - reste affichée jusqu'à fermeture ou nouvelle tentative */}
+          {localError && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg relative animate-in fade-in duration-300">
               <button
-                onClick={clearError}
+                onClick={handleCloseError}
                 className="absolute top-2 right-2 p-1 hover:bg-red-100 rounded transition-colors"
+                aria-label="Fermer l'erreur"
               >
                 <X className="h-4 w-4 text-red-600" />
               </button>
               <p className="text-sm text-red-600 font-medium pr-6">
-                {error}
+                {localError}
               </p>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-5" autoComplete="off">
+          <form 
+            onSubmit={handleSubmit} 
+            className="space-y-5"
+            autoComplete={hasError ? "off" : "on"}
+            // Changer le nom du formulaire après une erreur pour que le navigateur
+            // ne le reconnaisse pas comme un formulaire de connexion valide
+            name={hasError ? "login-form-error" : "login-form"}
+          >
             {/* Champ Username */}
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
@@ -124,12 +159,12 @@ export default function LoginPage() {
                   id="username"
                   name="username"
                   type="text"
-                  autoComplete="off"
+                  autoComplete={hasError ? "off" : "username"}
                   required
                   value={formData.username}
                   onChange={handleChange}
                   disabled={isLoading}
-                  className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
+                  className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
                   placeholder="admin@courati.mr"
                 />
               </div>
@@ -148,12 +183,14 @@ export default function LoginPage() {
                   id="password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
-                  autoComplete="new-password"
+                  // Utiliser "new-password" en cas d'erreur pour empêcher l'enregistrement
+                  // Utiliser "current-password" seulement quand il n'y a pas d'erreur
+                  autoComplete={hasError ? "new-password" : "current-password"}
                   required
                   value={formData.password}
                   onChange={handleChange}
                   disabled={isLoading}
-                  className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
+                  className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
                   placeholder="••••••••"
                 />
                 <button
@@ -161,6 +198,7 @@ export default function LoginPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   disabled={isLoading}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center hover:text-primary-600 transition-colors disabled:cursor-not-allowed"
+                  aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                 >
                   {showPassword ? (
                     <EyeOff className="h-5 w-5 text-gray-400" />
@@ -175,7 +213,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
+              className="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-primary-500 hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
             >
               {isLoading ? (
                 <>
@@ -187,21 +225,11 @@ export default function LoginPage() {
               )}
             </button>
           </form>
-
-          {/* Lien mot de passe oublié */}
-          <div className="mt-6 text-center">
-            <button
-              type="button"
-              className="text-sm text-primary-600 hover:text-primary-700 font-medium transition-colors"
-            >
-              Mot de passe oublié ?
-            </button>
-          </div>
         </div>
 
         {/* Footer */}
         <div className="mt-8 text-center">
-          <p className="text-sm text-white/80">
+          <p className="text-sm text-gray-500">
             © 2025 Courati. Tous droits réservés.
           </p>
         </div>

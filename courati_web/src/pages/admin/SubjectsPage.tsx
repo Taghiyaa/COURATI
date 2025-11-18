@@ -159,7 +159,7 @@ export default function SubjectsPage() {
                     {(subject as any).level_names?.map((level: string, idx: number) => (
                       <span
                         key={idx}
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
+                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-800"
                       >
                         {level}
                       </span>
@@ -202,7 +202,7 @@ export default function SubjectsPage() {
               <div className="flex items-center space-x-2 pt-4 border-t border-gray-100">
                 <button
                   onClick={() => handleEdit(subject)}
-                  className="flex-1 flex items-center justify-center space-x-2 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                  className="flex-1 flex items-center justify-center space-x-2 px-3 py-2 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-100 transition-colors"
                 >
                   <Edit className="h-4 w-4" />
                   <span className="text-sm font-medium">Modifier</span>

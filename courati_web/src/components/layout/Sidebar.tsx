@@ -74,19 +74,15 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
-          <div className="flex items-center space-x-3">
-            <Logo size="md" />
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Courati</h1>
-              <p className="text-xs text-gray-500">Admin</p>
-            </div>
+        <div className="flex items-center justify-between h-20 px-6 border-b border-gray-200">
+          <div className="flex items-center justify-center w-full">
+            <Logo size="lg" />
           </div>
           
           {/* Bouton fermer (mobile) */}
           <button
             onClick={onClose}
-            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="lg:hidden absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="h-5 w-5 text-gray-500" />
           </button>

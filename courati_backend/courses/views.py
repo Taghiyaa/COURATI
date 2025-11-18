@@ -1,7 +1,7 @@
 # courses/views.py
 
 import logging
-from django.db.models import Q, Count, Avg, Max, Sum
+from django.db.models import Q, Count, Avg, Max, Sum, F
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from datetime import datetime, timedelta
@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes, action
 
-from accounts.models import StudentProfile
+from accounts.models import StudentProfile, Level, Major
 from .models import (
     Subject, Document, UserActivity, UserFavorite, UserProgress,
     Quiz, Question, Choice, QuizAttempt, StudentAnswer,
@@ -936,16 +936,73 @@ class TeacherSubjectsView(APIView):
             # Récupérer les matières assignées
             subjects = get_teacher_subjects(user)
             
-            # Annoter avec le nombre de documents
-            subjects = subjects.annotate(
-                document_count=Count('documents', filter=Q(documents__is_active=True))
-            ).order_by('name')
+            # Construction manuelle avec toutes les stats
+            subjects_data = []
             
-            serializer = TeacherSubjectSerializer(
-                subjects, 
-                many=True, 
-                context={'request': request}
-            )
+            for subject in subjects:
+                # Documents
+                total_documents = Document.objects.filter(subject=subject).count()
+                
+                # Quiz
+                total_quizzes = Quiz.objects.filter(subject=subject).count()
+                
+                # Étudiants
+                from accounts.models import StudentProfile
+                student_profiles = StudentProfile.objects.filter(
+                    level__in=subject.levels.all(),
+                    major__in=subject.majors.all()
+                ).distinct()
+                total_students = student_profiles.count()
+                
+                # Vues et téléchargements
+                total_views = UserActivity.objects.filter(
+                    subject=subject,
+                    action='view'
+                ).count()
+                
+                total_downloads = UserActivity.objects.filter(
+                    subject=subject,
+                    action='download'
+                ).count()
+                
+                # LOG DEBUG
+                logger.info(f"📊 {subject.name}: docs={total_documents}, quiz={total_quizzes}, students={total_students}")
+                
+                # ✅ CORRECTION : Import uniquement ce qui existe
+                from accounts.permissions import can_edit_subject_content
+                
+                # ✅ Permissions simplifiées
+                # Un professeur peut toujours uploader des documents sur ses matières
+                can_upload = True  # Par défaut, le professeur peut uploader
+                
+                # Construire l'objet matière
+                subject_data = {
+                    'subject': {
+                        'id': subject.id,
+                        'name': subject.name,
+                        'code': subject.code,
+                        'description': subject.description,
+                        'is_active': subject.is_active,
+                        'is_featured': subject.is_featured,
+                        'levels': [{'id': l.id, 'name': l.name} for l in subject.levels.all()],
+                        'majors': [{'id': m.id, 'name': m.name} for m in subject.majors.all()],
+                        'created_at': subject.created_at,
+                        'updated_at': subject.updated_at
+                    },
+                    'statistics': {
+                        'total_documents': total_documents,
+                        'total_quizzes': total_quizzes,
+                        'total_students': total_students,
+                        'total_views': total_views,
+                        'total_downloads': total_downloads
+                    },
+                    'permissions': {
+                        'can_edit_content': can_edit_subject_content(user, subject),
+                        'can_upload_documents': can_upload  # ✅ Simplifié
+                    }
+                }
+                
+                subjects_data.append(subject_data)
             
             return Response({
                 'success': True,
@@ -953,17 +1010,20 @@ class TeacherSubjectsView(APIView):
                     'name': user.get_full_name(),
                     'email': user.email,
                 },
-                'total_subjects': subjects.count(),
-                'subjects': serializer.data
+                'total_subjects': len(subjects_data),
+                'subjects': subjects_data
             })
             
         except Exception as e:
             logger.error(f"❌ Erreur matières professeur {user.username}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
             return Response({
+                'success': False,
                 'error': 'Erreur serveur',
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 class TeacherSubjectStudentsView(APIView):
     """Liste des étudiants d'une matière pour un professeur"""
@@ -1150,27 +1210,43 @@ class TeacherDeleteDocumentView(APIView):
 
 
 class TeacherSubjectStatisticsView(APIView):
-    """Statistiques d'une matière pour un professeur"""
+    """
+    Statistiques détaillées d'une matière pour un professeur
+    GET /api/courses/teacher/subjects/{subject_id}/statistics/
+    """
     permission_classes = [IsTeacherUser]
     
     def get(self, request, subject_id):
-        user = request.user
-        logger.info(f"📊 Stats matière {subject_id} par prof: {user.username}")
+        """Récupérer les statistiques d'une matière"""
+        logger.info(f"📊 Statistiques matière {subject_id} par prof: {request.user.username}")
         
         try:
-            subject = Subject.objects.get(id=subject_id, is_active=True)
+            subject = get_object_or_404(Subject, id=subject_id)
             
-            if not has_subject_access(user, subject):
+            # Vérifier l'accès
+            if not has_subject_access(request.user, subject):
                 return Response({
-                    'error': 'Accès refusé'
+                    'success': False,
+                    'error': 'Accès refusé à cette matière'
                 }, status=status.HTTP_403_FORBIDDEN)
             
-            # Statistiques des documents
-            total_documents = Document.objects.filter(
-                subject=subject,
-                is_active=True
-            ).count()
+            # Dates
+            now = timezone.now()
+            week_ago = now - timedelta(days=7)
             
+            # ✅ STATISTIQUES GÉNÉRALES
+            total_documents = Document.objects.filter(subject=subject).count()
+            total_quizzes = Quiz.objects.filter(subject=subject).count()
+            
+            # Étudiants
+            from accounts.models import StudentProfile
+            student_profiles = StudentProfile.objects.filter(
+                level__in=subject.levels.all(),
+                major__in=subject.majors.all()
+            ).distinct()
+            total_students = student_profiles.count()
+            
+            # Vues et téléchargements
             total_views = UserActivity.objects.filter(
                 subject=subject,
                 action='view'
@@ -1181,48 +1257,117 @@ class TeacherSubjectStatisticsView(APIView):
                 action='download'
             ).count()
             
-            # Top 5 documents les plus consultés
-            top_documents = Document.objects.filter(
+            # ✅ ACTIVITÉ RÉCENTE (7 derniers jours)
+            recent_views = UserActivity.objects.filter(
                 subject=subject,
-                is_active=True
-            ).order_by('-view_count')[:5]
-            
-            top_docs_data = [{
-                'id': doc.id,
-                'title': doc.title,
-                'views': doc.view_count,
-                'downloads': doc.download_count
-            } for doc in top_documents]
-            
-            # Nombre d'étudiants
-            student_count = StudentProfile.objects.filter(
-                level__in=subject.levels.all(),
-                major__in=subject.majors.all()
+                action='view',
+                created_at__gte=week_ago
             ).count()
+            
+            recent_downloads = UserActivity.objects.filter(
+                subject=subject,
+                action='download',
+                created_at__gte=week_ago
+            ).count()
+            
+            recent_quiz_attempts = QuizAttempt.objects.filter(
+                quiz__subject=subject,
+                started_at__gte=week_ago
+            ).count()
+            
+            # ✅ DOCUMENTS PAR TYPE
+            documents_by_type = {}
+            for doc_type, _ in Document.DOCUMENT_TYPES:
+                count = Document.objects.filter(
+                    subject=subject,
+                    document_type=doc_type
+                ).count()
+                if count > 0:
+                    documents_by_type[doc_type] = count
+            
+            # ✅ TOP DOCUMENTS
+            top_documents = []
+            docs = Document.objects.filter(subject=subject).order_by('-view_count')[:5]
+            for doc in docs:
+                top_documents.append({
+                    'id': doc.id,
+                    'title': doc.title,
+                    'views': doc.view_count,
+                    'downloads': doc.download_count
+                })
+            
+            # ✅ PERFORMANCE DES QUIZ
+            quiz_performance = []
+            quizzes = Quiz.objects.filter(subject=subject)
+            
+            for quiz in quizzes:
+                attempts = QuizAttempt.objects.filter(quiz=quiz)
+                completed = attempts.filter(status='COMPLETED')
+                
+                if completed.exists():
+                    # Score moyen normalisé sur 20
+                    scores = []
+                    for attempt in completed:
+                        if quiz.total_points and quiz.total_points > 0:
+                            normalized = (float(attempt.score) / float(quiz.total_points)) * 20
+                            scores.append(normalized)
+                    
+                    avg_score = round(sum(scores) / len(scores), 2) if scores else 0
+                    
+                    # Taux de réussite
+                    passed = 0
+                    for attempt in completed:
+                        if quiz.total_points and quiz.total_points > 0:
+                            percentage = (float(attempt.score) / float(quiz.total_points)) * 100
+                            if percentage >= float(quiz.passing_percentage):
+                                passed += 1
+                    
+                    pass_rate = round((passed / completed.count()) * 100, 1) if completed.count() > 0 else 0
+                    
+                    quiz_performance.append({
+                        'quiz_id': quiz.id,
+                        'quiz_title': quiz.title,
+                        'total_attempts': attempts.count(),
+                        'average_score': avg_score,
+                        'pass_rate': pass_rate
+                    })
+            
+            # ✅ LOG POUR DEBUG
+            logger.info(f"📊 Stats calculées pour {subject.name}:")
+            logger.info(f"  - Documents: {total_documents}")
+            logger.info(f"  - Quiz: {total_quizzes}")
+            logger.info(f"  - Étudiants: {total_students}")
+            logger.info(f"  - Vues totales: {total_views}")
+            logger.info(f"  - Vues récentes (7j): {recent_views}")
+            logger.info(f"  - Téléchargements récents (7j): {recent_downloads}")
+            logger.info(f"  - Tentatives quiz récentes (7j): {recent_quiz_attempts}")
+            
+            statistics = {
+                'total_documents': total_documents,
+                'total_quizzes': total_quizzes,
+                'total_students': total_students,
+                'total_views': total_views,
+                'total_downloads': total_downloads,
+                'recent_views': recent_views,
+                'recent_downloads': recent_downloads,
+                'recent_quiz_attempts': recent_quiz_attempts,
+                'documents_by_type': documents_by_type,
+                'top_documents': top_documents,
+                'quiz_performance': quiz_performance
+            }
             
             return Response({
                 'success': True,
-                'subject': {
-                    'id': subject.id,
-                    'name': subject.name,
-                    'code': subject.code
-                },
-                'statistics': {
-                    'total_documents': total_documents,
-                    'total_views': total_views,
-                    'total_downloads': total_downloads,
-                    'student_count': student_count,
-                    'top_documents': top_docs_data
-                }
+                'statistics': statistics
             })
             
-        except Subject.DoesNotExist:
-            return Response({
-                'error': 'Matière non trouvée'
-            }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            logger.error(f"❌ Erreur stats matière: {str(e)}")
+            logger.error(f"❌ Erreur statistiques matière: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
             return Response({
+                'success': False,
                 'error': 'Erreur serveur',
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2683,9 +2828,7 @@ class AdminQuizDetailView(APIView):
     
     def get(self, request, quiz_id):
         try:
-            quiz = Quiz.objects.annotate(
-                question_count=Count('questions')
-            ).get(id=quiz_id)
+            quiz = Quiz.objects.select_related('subject', 'created_by').prefetch_related('questions', 'questions__choices').get(id=quiz_id)
             
             serializer = QuizAdminDetailSerializer(quiz)
             
@@ -2847,7 +2990,8 @@ class TeacherQuizListCreateView(APIView):
             # Récupérer les quiz de ces matières
             queryset = Quiz.objects.filter(
                 subject__in=teacher_subjects
-            ).select_related('subject', 'created_by')
+            ).select_related('subject', 'created_by').prefetch_related('questions').order_by('-created_at')
+            # ✅ Ajout de prefetch_related('questions') pour optimiser
             
             # Filtres
             is_active = request.GET.get('is_active', None)
@@ -2861,12 +3005,6 @@ class TeacherQuizListCreateView(APIView):
             search = request.GET.get('search', None)
             if search:
                 queryset = queryset.filter(title__icontains=search)
-            
-            # Annoter
-            queryset = queryset.annotate(
-                question_count=Count('questions'),
-                total_attempts=Count('attempts')
-            ).order_by('-created_at')
             
             serializer = QuizAdminListSerializer(queryset, many=True)
             
@@ -2883,6 +3021,9 @@ class TeacherQuizListCreateView(APIView):
             
         except Exception as e:
             logger.error(f"❌ Erreur liste quiz professeur: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
             return Response({
                 'success': False,
                 'error': 'Erreur serveur',
@@ -2962,9 +3103,7 @@ class TeacherQuizDetailView(APIView):
     def get(self, request, quiz_id):
         """Détail d'un quiz"""
         try:
-            quiz = Quiz.objects.annotate(
-                question_count=Count('questions')
-            ).get(id=quiz_id)
+            quiz = Quiz.objects.select_related('subject', 'created_by').prefetch_related('questions', 'questions__choices').get(id=quiz_id)
             
             # Vérifier l'accès
             if not has_subject_access(request.user, quiz.subject):
@@ -3146,10 +3285,10 @@ class TeacherDashboardView(APIView):
             # Étudiants
             from accounts.models import StudentProfile
             student_profiles = StudentProfile.objects.filter(
-                level__in=Level.objects.filter(subjects__in=teacher_subjects).distinct(),
-                major__in=Major.objects.filter(subjects__in=teacher_subjects).distinct()
+                level__in=Level.objects.filter(subject__in=teacher_subjects).distinct(),
+                major__in=Major.objects.filter(subject__in=teacher_subjects).distinct()
             ).distinct()
-            
+
             total_students = student_profiles.count()
             
             # Étudiants actifs (avec au moins 1 activité cette semaine)
@@ -3175,7 +3314,52 @@ class TeacherDashboardView(APIView):
                 quiz__subject__in=teacher_subjects,
                 started_at__gte=week_ago
             ).count()
-            
+
+            # =====================================
+            # ACTIVITÉ HEBDOMADAIRE (jour par jour)
+            # =====================================
+
+            weekly_activity = []
+
+            for i in range(6, -1, -1):  # 7 derniers jours (du plus ancien au plus récent)
+                day_start = now - timedelta(days=i)
+                day_start = day_start.replace(hour=0, minute=0, second=0, microsecond=0)
+                day_end = day_start + timedelta(days=1)
+                
+                # ✅ Vues du jour (étudiants uniquement)
+                day_views = UserActivity.objects.filter(
+                    subject__in=teacher_subjects,
+                    action='view',
+                    user__role='STUDENT',  # ✅ CORRECT : user__role
+                    created_at__gte=day_start,
+                    created_at__lt=day_end
+                ).count()
+                
+                # ✅ Téléchargements du jour (étudiants uniquement)
+                day_downloads = UserActivity.objects.filter(
+                    subject__in=teacher_subjects,
+                    action='download',
+                    user__role='STUDENT',  # ✅ CORRECT : user__role
+                    created_at__gte=day_start,
+                    created_at__lt=day_end
+                ).count()
+                
+                # Tentatives de quiz du jour
+                day_quiz_attempts = QuizAttempt.objects.filter(
+                    quiz__subject__in=teacher_subjects,
+                    started_at__gte=day_start,
+                    started_at__lt=day_end
+                ).count()
+                
+                weekly_activity.append({
+                    'date': day_start.isoformat(),
+                    'views': day_views,
+                    'downloads': day_downloads,
+                    'quiz_attempts': day_quiz_attempts
+                })
+
+            logger.info(f"📊 Activité hebdomadaire: {weekly_activity}")
+
             stats_data = {
                 'total_subjects': total_subjects,
                 'active_subjects': active_subjects,
@@ -3189,15 +3373,17 @@ class TeacherDashboardView(APIView):
                 'active_students': active_students,
                 'views_this_week': views_this_week,
                 'downloads_this_week': downloads_this_week,
-                'quiz_attempts_this_week': quiz_attempts_this_week
+                'quiz_attempts_this_week': quiz_attempts_this_week,
+                'weekly_activity': weekly_activity,  # ✅ AJOUTÉ
             }
+            
             
             # =====================================
             # 2. PERFORMANCE PAR MATIÈRE
             # =====================================
-            
+
             subject_performance = []
-            
+
             for subject in teacher_subjects:
                 # Documents et quiz
                 doc_count = Document.objects.filter(subject=subject).count()
@@ -3232,11 +3418,11 @@ class TeacherDashboardView(APIView):
                     quiz__subject=subject
                 ).count()
                 
-                # Performance quiz
+                # ✅ PERFORMANCE QUIZ CORRIGÉE
                 completed = QuizAttempt.objects.filter(
                     quiz__subject=subject,
                     status='COMPLETED'
-                )
+                ).select_related('quiz')
                 
                 avg_score = 0
                 pass_rate = 0
@@ -3244,17 +3430,37 @@ class TeacherDashboardView(APIView):
                 if completed.exists():
                     # Score moyen normalisé sur 20
                     scores = []
-                    for attempt in completed:
-                        if attempt.quiz.total_points > 0:
-                            normalized = (float(attempt.score) / float(attempt.quiz.total_points)) * 20
-                            scores.append(normalized)
+                    passed = 0
+                    total = 0
                     
+                    for attempt in completed:
+                        quiz = attempt.quiz
+                        
+                        # Vérifier que le quiz a un total_points valide
+                        if quiz.total_points and quiz.total_points > 0:
+                            # ✅ Score normalisé sur 20
+                            normalized_score = (float(attempt.score) / float(quiz.total_points)) * 20
+                            scores.append(normalized_score)
+                            
+                            # ✅ Calculer le pourcentage pour vérifier la réussite
+                            percentage = (float(attempt.score) / float(quiz.total_points)) * 100
+                            
+                            # ✅ Comparer le POURCENTAGE au passing_percentage
+                            if percentage >= float(quiz.passing_percentage):
+                                passed += 1
+                            
+                            total += 1
+                    
+                    # Score moyen
                     if scores:
                         avg_score = round(sum(scores) / len(scores), 2)
                     
                     # Taux de réussite
-                    passed = completed.filter(score__gte=F('quiz__passing_percentage')).count()
-                    pass_rate = round((passed / completed.count()) * 100, 1)
+                    if total > 0:
+                        pass_rate = round((passed / total) * 100, 1)
+                    
+                    # ✅ LOG POUR DEBUG
+                    logger.info(f"📊 {subject.name}: {passed}/{total} réussis ({pass_rate}%) - Score moyen: {avg_score}/20")
                 
                 subject_performance.append({
                     'subject_id': subject.id,
@@ -3410,18 +3616,27 @@ class TeacherQuizAttemptsView(APIView):
             completed = attempts.filter(status='COMPLETED')
             completed_count = completed.count()
             
+            # ✅ Récupérer total_points et vérifier qu'il n'est pas None
+            total_points = quiz.total_points if quiz.total_points is not None else 0
+            
             avg_score = 0
-            if completed_count > 0:
+            if completed_count > 0 and total_points > 0:
                 scores = []
                 for attempt in completed:
-                    if quiz.total_points > 0:
-                        normalized = (float(attempt.score) / float(quiz.total_points)) * 20
-                        scores.append(normalized)
+                    normalized = (float(attempt.score) / float(total_points)) * 20
+                    scores.append(normalized)
                 
                 if scores:
                     avg_score = round(sum(scores) / len(scores), 2)
             
-            passed = completed.filter(score__gte=quiz.passing_percentage).count()
+            # ✅ Calcul du taux de réussite corrigé
+            passed = 0
+            if completed_count > 0 and total_points > 0:
+                for attempt in completed:
+                    percentage = (float(attempt.score) / float(total_points)) * 100
+                    if percentage >= float(quiz.passing_percentage):
+                        passed += 1
+            
             pass_rate = round((passed / completed_count) * 100, 1) if completed_count > 0 else 0
             
             return Response({
@@ -3429,7 +3644,7 @@ class TeacherQuizAttemptsView(APIView):
                 'quiz': {
                     'id': quiz.id,
                     'title': quiz.title,
-                    'total_points': float(quiz.total_points),
+                    'total_points': float(total_points),  # ✅ Utiliser la variable vérifiée
                     'passing_percentage': float(quiz.passing_percentage)
                 },
                 'statistics': {
@@ -3443,6 +3658,79 @@ class TeacherQuizAttemptsView(APIView):
             
         except Exception as e:
             logger.error(f"❌ Erreur tentatives quiz: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# ========================================
+# LISTE DES DOCUMENTS D'UNE MATIÈRE (PROFESSEUR)
+# ========================================
+
+class TeacherSubjectDocumentsView(APIView):
+    """
+    Liste des documents d'une matière pour un professeur
+    GET /api/courses/teacher/subjects/{subject_id}/documents/
+    """
+    permission_classes = [IsTeacherUser]
+    
+    def get(self, request, subject_id):
+        """Récupérer les documents d'une matière"""
+        logger.info(f"📄 Documents matière {subject_id} par prof: {request.user.username}")
+        
+        try:
+            subject = get_object_or_404(Subject, id=subject_id)
+            
+            # Vérifier l'accès
+            if not has_subject_access(request.user, subject):
+                return Response({
+                    'success': False,
+                    'error': 'Accès refusé à cette matière'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Récupérer tous les documents de la matière
+            documents = Document.objects.filter(
+                subject=subject
+            ).select_related('created_by', 'subject').order_by('-created_at')
+            
+            # Filtres optionnels
+            document_type = request.GET.get('type', None)
+            if document_type:
+                documents = documents.filter(document_type=document_type)
+            
+            search = request.GET.get('search', None)
+            if search:
+                from django.db.models import Q
+                documents = documents.filter(
+                    Q(title__icontains=search) | Q(description__icontains=search)
+                )
+            
+            # ✅ CORRECTION : Utiliser DocumentSerializer au lieu de DocumentListSerializer
+            serializer = DocumentSerializer(documents, many=True, context={'request': request})
+            
+            # Ajouter les permissions pour chaque document
+            documents_with_permissions = []
+            for doc_data in serializer.data:
+                doc = Document.objects.get(id=doc_data['id'])
+                doc_data['can_edit'] = doc.created_by == request.user
+                doc_data['can_delete'] = doc.created_by == request.user
+                documents_with_permissions.append(doc_data)
+            
+            return Response({
+                'success': True,
+                'documents': documents_with_permissions,
+                'count': len(documents_with_permissions)
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur documents matière: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
             return Response({
                 'success': False,
                 'error': 'Erreur serveur',

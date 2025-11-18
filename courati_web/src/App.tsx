@@ -8,12 +8,21 @@ import { useAuthStore } from './stores/authStore';
 import LoginPage from './pages/auth/LoginPage';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import AppLayout from './components/layout/AppLayout';
+import TeacherLayout from './components/layout/TeacherLayout';
 import DashboardPage from './pages/admin/DashboardPage';
 import LevelsPage from './pages/admin/LevelsPage';
 import MajorsPage from './pages/admin/MajorsPage';
 import SubjectsPage from './pages/admin/SubjectsPage';
 import TeachersPage from './pages/admin/TeachersPage';
 import StudentsPage from './pages/admin/StudentsPage';
+import StudentDetailPage from './pages/admin/StudentDetailPage';
+import TeacherDashboardPage from './pages/teacher/TeacherDashboardPage';
+import TeacherSubjectsPage from './pages/teacher/TeacherSubjectsPage';
+import TeacherSubjectDetailPage from './pages/teacher/TeacherSubjectDetailPage';
+import TeacherDocumentsPage from './pages/teacher/TeacherDocumentsPage';
+import TeacherQuizzesPage from './pages/teacher/TeacherQuizzesPage';
+import TeacherQuizDetailPage from './pages/teacher/TeacherQuizDetailPage';
+import QuizFormPage from './pages/teacher/QuizFormPage';
 
 // Créer le client React Query
 const queryClient = new QueryClient({
@@ -56,6 +65,7 @@ function App() {
             <Route path="subjects" element={<SubjectsPage />} />
             <Route path="teachers" element={<TeachersPage />} />
             <Route path="students" element={<StudentsPage />} />
+            <Route path="students/:id" element={<StudentDetailPage />} />
             <Route path="quizzes" element={<div className="p-6">Quiz (Étape 4+)</div>} />
             <Route path="profile" element={<div className="p-6">Mon Profil</div>} />
             <Route path="settings" element={<div className="p-6">Paramètres</div>} />
@@ -64,22 +74,24 @@ function App() {
 
           {/* Routes protégées - Enseignant */}
           <Route
-            path="/teacher/*"
+            path="/teacher"
             element={
               <ProtectedRoute requiredRole="TEACHER">
-                <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                  <div className="text-center">
-                    <h1 className="text-4xl font-bold text-gray-900 mb-4">
-                      Interface Enseignant
-                    </h1>
-                    <p className="text-gray-600">
-                      Dashboard enseignant (Étape 8)
-                    </p>
-                  </div>
-                </div>
+                <TeacherLayout />
               </ProtectedRoute>
             }
-          />
+          >
+            <Route path="dashboard" element={<TeacherDashboardPage />} />
+            <Route path="subjects" element={<TeacherSubjectsPage />} />
+            <Route path="subjects/:id" element={<TeacherSubjectDetailPage />} />
+            <Route path="documents" element={<TeacherDocumentsPage />} />
+            <Route path="quizzes" element={<TeacherQuizzesPage />} />
+            <Route path="quizzes/:id" element={<TeacherQuizDetailPage />} />
+            <Route path="quizzes/create" element={<QuizFormPage />} />
+            <Route path="quizzes/:id/edit" element={<QuizFormPage />} />
+            <Route path="profile" element={<div className="p-6">Mon Profil</div>} />
+            <Route index element={<Navigate to="dashboard" replace />} />
+          </Route>
 
           {/* Redirection par défaut */}
           <Route path="/" element={<Navigate to="/login" replace />} />

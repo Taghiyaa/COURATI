@@ -951,6 +951,10 @@ class StudentAdminListSerializer(serializers.ModelSerializer):
     major_name = serializers.CharField(source='student_profile.major.name', read_only=True)
     phone_number = serializers.CharField(source='student_profile.phone_number', read_only=True)
     
+    # ✅ IDs pour pré-remplir les formulaires
+    level_id = serializers.SerializerMethodField()
+    major_id = serializers.SerializerMethodField()
+    
     # Statistiques
     total_documents_viewed = serializers.SerializerMethodField()
     total_quiz_attempts = serializers.SerializerMethodField()
@@ -967,6 +971,8 @@ class StudentAdminListSerializer(serializers.ModelSerializer):
             'last_name',
             'level_name',
             'major_name',
+            'level_id',
+            'major_id',
             'phone_number',  # ✅ Plus de student_id
             'is_active',
             'date_joined',
@@ -974,6 +980,24 @@ class StudentAdminListSerializer(serializers.ModelSerializer):
             'total_quiz_attempts',
             'last_activity'
         ]
+    
+    def get_level_id(self, obj):
+        """Récupérer l'ID du niveau de manière sécurisée"""
+        try:
+            if hasattr(obj, 'student_profile') and obj.student_profile.level:
+                return obj.student_profile.level.id
+        except Exception as e:
+            logger.error(f"❌ Erreur get_level_id: {str(e)}")
+        return None
+    
+    def get_major_id(self, obj):
+        """Récupérer l'ID de la filière de manière sécurisée"""
+        try:
+            if hasattr(obj, 'student_profile') and obj.student_profile.major:
+                return obj.student_profile.major.id
+        except Exception as e:
+            logger.error(f"❌ Erreur get_major_id: {str(e)}")
+        return None
     
     def get_total_documents_viewed(self, obj):
         """Nombre de documents consultés"""

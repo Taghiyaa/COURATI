@@ -95,7 +95,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
               className="flex items-center space-x-3 p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
               {/* Avatar */}
-              <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-secondary-600 rounded-full flex items-center justify-center">
+              <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center">
                 <span className="text-sm font-semibold text-white">
                   {user ? getInitials(user.first_name, user.last_name) : 'U'}
                 </span>

@@ -396,25 +396,126 @@ export interface Answer {
 }
 
 // Dashboard types
-export interface DashboardStats {
+export interface DashboardStatsData {
+  total_users: number;
   total_students: number;
   total_teachers: number;
-  total_subjects: number;
-  total_documents: number;
-  total_quizzes: number;
+  total_admins: number;
   active_students: number;
   active_teachers: number;
-  students_by_major: Array<{ major: string; count: number }>;
-  students_by_level: Array<{ level: string; count: number }>;
-  activity_timeline: Array<{ date: string; views: number; downloads: number; quiz_attempts: number }>;
-  top_subjects: Array<{ subject: string; views: number; downloads: number }>;
-  quiz_performance: {
-    total_attempts: number;
-    average_score: number;
-    pass_rate: number;
-  };
-  recent_activities: Activity[];
+  total_subjects: number;
+  active_subjects: number;
+  total_levels: number;
+  total_majors: number;
+  total_documents: number;
+  total_quizzes: number;
+  active_quizzes: number;
+  new_students_30d: number;
+  new_documents_30d: number;
+  new_quizzes_30d: number;
+  total_views_30d: number;
+  total_downloads_30d: number;
+  quiz_attempts_30d: number;
 }
+
+export interface StudentByMajor {
+  major_id: number;
+  major_name: string;
+  major_code: string;
+  student_count: number;
+  percentage: number;
+}
+
+export interface StudentByLevel {
+  level_id: number;
+  level_name: string;
+  level_code: string;
+  student_count: number;
+  percentage: number;
+}
+
+export interface ActivityTimeline {
+  date: string;
+  new_students: number;
+  new_documents: number;
+  views: number;
+  downloads: number;
+  quiz_attempts: number;
+}
+
+export interface TopSubject {
+  subject_id: number;
+  subject_name: string;
+  subject_code: string;
+  document_count: number;
+  view_count: number;
+  download_count: number;
+}
+
+export interface TopDocument {
+  document_id: number;
+  document_title: string;
+  subject_name: string;
+  document_type: string;
+  view_count: number;
+  download_count: number;
+}
+
+export interface QuizPerformance {
+  total_attempts: number;
+  completed_attempts: number;
+  average_score: number;
+  pass_rate: number;
+  hardest_quizzes: Array<{
+    quiz_id: number;
+    title: string;
+    subject: string;
+    attempts: number;
+    pass_rate: number;
+  }>;
+  easiest_quizzes: Array<{
+    quiz_id: number;
+    title: string;
+    subject: string;
+    attempts: number;
+    pass_rate: number;
+  }>;
+}
+
+export interface RecentActivity {
+  activity_type: string;
+  title: string;
+  description: string;
+  user_name: string;
+  subject_name?: string;
+  created_at: string;
+  icon: string;
+  color: string;
+}
+
+export interface SystemHealth {
+  status: string;
+  total_storage_mb: number;
+  active_users_today: number;
+  pending_assignments: number;
+  inactive_teachers: number;
+  subjects_without_content: number;
+  students_without_activity: number;
+}
+
+export interface DashboardData {
+  stats: DashboardStatsData;
+  students_by_major: StudentByMajor[];
+  students_by_level: StudentByLevel[];
+  activity_timeline: ActivityTimeline[];
+  top_subjects: TopSubject[];
+  top_documents: TopDocument[];
+  quiz_performance: QuizPerformance;
+  recent_activities: RecentActivity[];
+  system_health: SystemHealth;
+}
+
+export interface DashboardStats extends DashboardData {}
 
 // API Response types
 export interface ApiResponse<T> {

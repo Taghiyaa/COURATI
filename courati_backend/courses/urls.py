@@ -57,6 +57,7 @@ urlpatterns = [
     # NOUVEAU - APIs PROFESSEURS 
     path('teacher/dashboard/', views.TeacherDashboardView.as_view(), name='teacher-dashboard'),
     path('teacher/quizzes/<int:quiz_id>/attempts/', views.TeacherQuizAttemptsView.as_view(), name='teacher-quiz-attempts'),
+    path('teacher/subjects/<int:subject_id>/documents/', views.TeacherSubjectDocumentsView.as_view(), name='teacher-subject-documents'),
     path('teacher/documents/<int:document_id>/update/', views.TeacherUpdateDocumentView.as_view(), name='teacher-update-document'),
     path('teacher/subjects/<int:subject_id>/update/', views.TeacherUpdateSubjectView.as_view(), name='teacher-update-subject'),
 

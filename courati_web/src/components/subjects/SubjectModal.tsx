@@ -47,20 +47,24 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
     queryFn: majorsAPI.getAll,
   });
 
-  // Pré-remplir le formulaire en mode édition
+  // Modification: préremplissage correct dépendant du chargement des listes
   useEffect(() => {
-    if (subject) {
+    if (subject && levels.length > 0 && majors.length > 0) {
       setFormData({
         name: subject.name,
         code: subject.code,
         description: subject.description || '',
-        levels: Array.isArray(subject.levels) ? subject.levels.map((l: any) => typeof l === 'number' ? l : l.id) : [],
-        majors: Array.isArray(subject.majors) ? subject.majors.map((m: any) => typeof m === 'number' ? m : m.id) : [],
+        levels: Array.isArray(subject.levels)
+          ? subject.levels.map((l: any) => typeof l === 'number' ? l : (l?.id ?? l))
+          : [],
+        majors: Array.isArray(subject.majors)
+          ? subject.majors.map((m: any) => typeof m === 'number' ? m : (m?.id ?? m))
+          : [],
         credits: (subject as any).credits || 3,
         semester: (subject as any).semester || 1,
       });
     }
-  }, [subject]);
+  }, [subject, levels, majors]);
 
   // Mutation créer/modifier
   const mutation = useMutation({
@@ -80,6 +84,14 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (formData.levels.length === 0) {
+      toast.error('Veuillez sélectionner au moins un niveau.');
+      return;
+    }
+    if (formData.majors.length === 0) {
+      toast.error('Veuillez sélectionner au moins une filière.');
+      return;
+    }
     mutation.mutate(formData);
   };
 
@@ -159,49 +171,79 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
           {/* Sélection Niveaux */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Niveaux *
+              Niveaux <span className="text-red-500">*</span>
             </label>
-            <select
-              multiple
-              value={formData.levels.map(String)}
-              onChange={(e) => {
-                const selected = Array.from(e.target.selectedOptions, option => parseInt(option.value));
-                setFormData(prev => ({ ...prev, levels: selected }));
-              }}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              size={4}
-            >
-              {levels.map((level: Level) => (
-                <option key={level.id} value={level.id}>
-                  {level.code} - {level.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-500 mt-1">Maintenez Ctrl/Cmd pour sélectionner plusieurs</p>
+            <div className="flex flex-wrap gap-2">
+              {levels.map((level: Level) => {
+                const checked = formData.levels.includes(level.id);
+                return (
+                  <label
+                    key={level.id}
+                    className={`inline-flex items-center rounded-full px-4 py-2 border cursor-pointer select-none text-sm font-medium transition-all
+                              ${checked ? 'bg-primary-100 border-primary-500 text-primary-700 font-semibold shadow' : 'bg-white border-gray-300 text-gray-700'}
+                              hover:border-primary-500 focus-within:ring-2 focus-within:ring-primary-400 focus:z-10`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        setFormData((prev) => {
+                          const exists = prev.levels.includes(level.id);
+                          return {
+                            ...prev,
+                            levels: exists ? prev.levels.filter((id) => id !== level.id) : [...prev.levels, level.id],
+                          };
+                        });
+                      }}
+                      className="hidden"
+                    />
+                    {level.code} - {level.name}
+                  </label>
+                );
+              })}
+            </div>
+            {formData.levels.length === 0 && (
+              <p className="text-xs text-red-500 mt-1">Veuillez sélectionner au moins un niveau.</p>
+            )}
           </div>
 
           {/* Sélection Filières */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Filières *
+              Filières <span className="text-red-500">*</span>
             </label>
-            <select
-              multiple
-              value={formData.majors.map(String)}
-              onChange={(e) => {
-                const selected = Array.from(e.target.selectedOptions, option => parseInt(option.value));
-                setFormData(prev => ({ ...prev, majors: selected }));
-              }}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              size={4}
-            >
-              {majors.map((major: Major) => (
-                <option key={major.id} value={major.id}>
-                  {major.code} - {major.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-500 mt-1">Maintenez Ctrl/Cmd pour sélectionner plusieurs</p>
+            <div className="flex flex-wrap gap-2">
+              {majors.map((major: Major) => {
+                const checked = formData.majors.includes(major.id);
+                return (
+                  <label
+                    key={major.id}
+                    className={`inline-flex items-center rounded-full px-4 py-2 border cursor-pointer select-none text-sm font-medium transition-all
+                              ${checked ? 'bg-primary-100 border-primary-500 text-primary-700 font-semibold shadow' : 'bg-white border-gray-300 text-gray-700'}
+                              hover:border-primary-500 focus-within:ring-2 focus-within:ring-primary-400 focus:z-10`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        setFormData((prev) => {
+                          const exists = prev.majors.includes(major.id);
+                          return {
+                            ...prev,
+                            majors: exists ? prev.majors.filter((id) => id !== major.id) : [...prev.majors, major.id],
+                          };
+                        });
+                      }}
+                      className="hidden"
+                    />
+                    {major.code} - {major.name}
+                  </label>
+                );
+              })}
+            </div>
+            {formData.majors.length === 0 && (
+              <p className="text-xs text-red-500 mt-1">Veuillez sélectionner au moins une filière.</p>
+            )}
           </div>
 
           {/* Crédits et Semestre */}
