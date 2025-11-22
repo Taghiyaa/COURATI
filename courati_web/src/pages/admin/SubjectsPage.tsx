@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Edit, Trash2, BookOpen } from 'lucide-react';
 import { subjectsAPI } from '../../api/subjects';
@@ -10,15 +10,16 @@ import type { Subject } from '../../types';
 export default function SubjectsPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
 
   // Récupérer les matières
-  const { data: subjects, isLoading, error } = useQuery({
-    queryKey: ['subjects', searchTerm],
+  const { data: subjects, isLoading, isFetching, error } = useQuery({
+    queryKey: ['subjects', debouncedSearch],
     queryFn: async () => {
       try {
-        const data = await subjectsAPI.getAll({ search: searchTerm });
+        const data = await subjectsAPI.getAll({ search: debouncedSearch });
         console.log('Matières récupérées:', data);
         return data;
       } catch (err) {
@@ -26,7 +27,14 @@ export default function SubjectsPage() {
         throw err;
       }
     },
+    placeholderData: (prev) => prev as any,
   });
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 500);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
 
   // Afficher l'erreur si elle existe
   if (error) {
@@ -66,7 +74,7 @@ export default function SubjectsPage() {
     setSelectedSubject(null);
   };
 
-  if (isLoading) {
+  if (!subjects && isLoading) {
     return <LoadingSpinner size="lg" text="Chargement des matières..." />;
   }
 
@@ -124,8 +132,11 @@ export default function SubjectsPage() {
             placeholder="Rechercher une matière..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
+          {(isFetching || searchTerm !== debouncedSearch) && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-gray-300 border-t-transparent animate-spin" />
+          )}
         </div>
       </div>
 

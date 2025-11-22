@@ -69,6 +69,7 @@ export default function AdminQuizzesPage() {
       is_active: statusFilter ? statusFilter === 'true' : undefined,
       search: debouncedSearch || undefined,
     }),
+    placeholderData: (prev) => prev as any,
   });
 
   const listData: any = listResp as any;
@@ -132,7 +133,7 @@ export default function AdminQuizzesPage() {
     },
   });
 
-  if (isLoading) return <LoadingSpinner />;
+  if (!listResp && isLoading) return <LoadingSpinner />;
   if (error) return <div className="text-red-600">Erreur: {(error as Error).message}</div>;
 
   return (

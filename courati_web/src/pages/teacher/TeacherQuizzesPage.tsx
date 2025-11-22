@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { teacherQuizzesAPI } from '../../api/teacherQuizzes';
 import { teacherAPI } from '../../api/teacher';
@@ -10,8 +10,15 @@ import { toast } from 'sonner';
 export default function TeacherQuizzesPage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [subjectFilter, setSubjectFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 500);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const { data: subjectsData } = useQuery({
     queryKey: ['teacher_subjects'],
@@ -27,13 +34,14 @@ export default function TeacherQuizzesPage() {
     return { id: s?.id, name: s?.name };
   }).filter((s: any) => s?.id);
 
-  const { data: response, isLoading, error } = useQuery({
-    queryKey: ['teacher_quizzes', search, subjectFilter, statusFilter],
+  const { data: response, isLoading, isFetching, error } = useQuery({
+    queryKey: ['teacher_quizzes', debouncedSearch, subjectFilter, statusFilter],
     queryFn: () => teacherQuizzesAPI.getAll({
-      search: search || undefined,
+      search: debouncedSearch || undefined,
       subject: subjectFilter ? Number(subjectFilter) : undefined,
       is_active: statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : undefined,
     }),
+    placeholderData: (prev) => prev as any,
   });
 
   const queryClient = useQueryClient();
@@ -57,7 +65,7 @@ export default function TeacherQuizzesPage() {
     ? response
     : (response?.quizzes || []);
 
-  if (isLoading) return <LoadingSpinner />;
+  if (!response && isLoading) return <LoadingSpinner />;
   if (error) return <div className="text-red-600">Erreur: {(error as Error).message}</div>;
 
   return (
@@ -69,12 +77,17 @@ export default function TeacherQuizzesPage() {
 
       <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
         <div className="flex flex-wrap items-center gap-3">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Rechercher un quiz..."
-            className="flex-1 min-w-[240px] px-3 py-2 border rounded"
-          />
+          <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher un quiz..."
+              className="w-full px-3 py-2 border rounded pr-10"
+            />
+            {(isFetching || search !== debouncedSearch) && (
+              <div className="h-4 w-4 rounded-full border-2 border-gray-300 border-t-transparent animate-spin" />
+            )}
+          </div>
           <select
             value={subjectFilter}
             onChange={(e) => setSubjectFilter(e.target.value)}

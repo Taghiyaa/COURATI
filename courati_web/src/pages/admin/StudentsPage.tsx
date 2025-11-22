@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Edit, Trash2, UserCheck, UserX, Users, Download } from 'lucide-react';
 import { studentsAPI } from '../../api/students';
@@ -13,6 +13,7 @@ import { Link } from 'react-router-dom';
 export default function StudentsPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [filterLevel, setFilterLevel] = useState<number | undefined>(undefined);
@@ -24,14 +25,15 @@ export default function StudentsPage() {
   const { 
     data: response, 
     isLoading, 
+    isFetching,
     error
   } = useQuery({
-    queryKey: ['students', searchTerm, filterLevel, filterMajor, filterActive],
+    queryKey: ['students', debouncedSearch, filterLevel, filterMajor, filterActive],
     enabled: true,
     queryFn: async () => {
       try {
         const params = {
-          search: searchTerm || undefined,
+          search: debouncedSearch || undefined,
           level_id: filterLevel,
           major_id: filterMajor,
           is_active: filterActive,
@@ -47,7 +49,14 @@ export default function StudentsPage() {
         throw error;
       }
     },
+    placeholderData: (prev) => prev as any,
   });
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 500);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
 
   // Extraire la liste des étudiants
   const students = useMemo(() => {
@@ -246,7 +255,7 @@ export default function StudentsPage() {
     }
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (!response && isLoading) return <LoadingSpinner />;
   if (error) return <div className="text-red-600">Erreur: {(error as Error).message}</div>;
 
   return (
@@ -289,8 +298,11 @@ export default function StudentsPage() {
                 placeholder="Rechercher par nom, email..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
+              {(isFetching || searchTerm !== debouncedSearch) && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-gray-300 border-t-transparent animate-spin" />
+              )}
             </div>
           </div>
 

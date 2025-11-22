@@ -79,7 +79,6 @@ function App() {
             <Route path="quizzes/:id" element={<AdminQuizDetailPage />} />
             <Route path="quizzes/:id/edit" element={<AdminQuizFormPage />} />
             <Route path="profile" element={<ProfilePage />} />
-            <Route path="settings" element={<div className="p-6">Paramètres</div>} />
             <Route index element={<Navigate to="dashboard" replace />} />
           </Route>
 

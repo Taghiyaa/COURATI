@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import { Menu, ChevronRight, User, Settings, LogOut } from 'lucide-react';
+import { Menu, ChevronRight, User, LogOut } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { getInitials } from '../../lib/utils';
 import { cn } from '../../lib/utils';
@@ -133,16 +133,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
                   <span>Mon Profil</span>
                 </Link>
 
-                {user?.role === 'ADMIN' && (
-                  <Link
-                    to="/admin/settings"
-                    onClick={() => setIsDropdownOpen(false)}
-                    className="flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                  >
-                    <Settings className="h-4 w-4" />
-                    <span>Paramètres</span>
-                  </Link>
-                )}
+                {/* Paramètres supprimés */}
 
                 <div className="border-t border-gray-100 my-1"></div>
 

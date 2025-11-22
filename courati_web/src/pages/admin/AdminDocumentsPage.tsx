@@ -147,6 +147,7 @@ export default function AdminDocumentsPage() {
       
       return adminDocumentsAPI.getAll(params);
     },
+    placeholderData: (prev) => prev as any,
   });
 
   const listData: any = listResp as any;
@@ -211,7 +212,7 @@ export default function AdminDocumentsPage() {
     bulkMutation.mutate({ action, document_ids: selectedIds });
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (!listResp && isLoading) return <LoadingSpinner />;
   if (error) return <div className="text-red-600">Erreur: {(error as Error).message}</div>;
 
   return (

@@ -3910,6 +3910,7 @@ class TeacherUpdateSubjectView(APIView):
                 'error': 'Erreur serveur',
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
 
 
 # ========================================
