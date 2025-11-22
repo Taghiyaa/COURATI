@@ -303,7 +303,9 @@ class AdminRegisterSerializer(serializers.Serializer):
             'user': user,
             'admin_profile': admin_profile
         }
-
+# ========================================
+# PROFILE SERIALIZERS - MOBILE (Students)
+# ========================================
 class UserProfileSerializer(serializers.ModelSerializer):
     """Serializer pour afficher le profil utilisateur"""
     user_type = serializers.SerializerMethodField()
@@ -1280,3 +1282,102 @@ class BulkStudentActionSerializer(serializers.Serializer):
             })
         
         return data
+
+# ========================================
+# PROFILE SERIALIZERS - WEB (Admin/Teacher)
+# ========================================
+
+class WebUserProfileSerializer(serializers.ModelSerializer):
+    """
+    Serializer User pour interface WEB uniquement
+    Différent de UserProfileSerializer qui est utilisé par le mobile
+    """
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
+    
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name',
+            'role', 'role_display', 'date_joined'
+        ]
+        read_only_fields = ['id', 'username', 'email', 'role', 'date_joined']
+
+
+class WebAdminProfileDetailSerializer(serializers.ModelSerializer):
+    """
+    Profil admin détaillé pour interface WEB
+    Différent de AdminProfileSerializer qui est simple (mobile)
+    """
+    user = WebUserProfileSerializer(read_only=True)
+    
+    class Meta:
+        model = AdminProfile
+        fields = ['user', 'department', 'phone_number', 'created_at', 'updated_at']
+
+
+class WebTeacherProfileDetailSerializer(serializers.ModelSerializer):
+    """
+    Profil teacher détaillé pour interface WEB
+    Spécifique aux professeurs
+    """
+    user = WebUserProfileSerializer(read_only=True)
+    assigned_subjects_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = TeacherProfile
+        fields = [
+            'user', 'phone_number', 'specialization', 'bio', 
+            'office', 'office_hours', 'assigned_subjects_count',
+            'created_at', 'updated_at'
+        ]
+    
+    def get_assigned_subjects_count(self, obj):
+        """Nombre de matières assignées au professeur"""
+        return TeacherAssignment.objects.filter(
+            teacher=obj.user, 
+            is_active=True
+        ).count()
+
+
+class WebUpdateProfileSerializer(serializers.Serializer):
+    """
+    Mise à jour profil pour interface WEB (Admin/Teacher uniquement)
+    Différent de UpdateProfileSerializer qui gère aussi les étudiants
+    """
+    # Champs User (communs)
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    phone_number = serializers.CharField(max_length=15, required=False, allow_blank=True)
+    
+    # Champs Admin
+    department = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    
+    # Champs Teacher
+    specialization = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    bio = serializers.CharField(required=False, allow_blank=True)
+    office = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    office_hours = serializers.CharField(max_length=200, required=False, allow_blank=True)
+
+
+class WebChangePasswordSerializer(serializers.Serializer):
+    """
+    Changement de mot de passe pour interface WEB (Admin/Teacher)
+    Utilise old_password au lieu de current_password
+    """
+    old_password = serializers.CharField(required=True, write_only=True)
+    new_password = serializers.CharField(required=True, min_length=8, write_only=True)
+    confirm_password = serializers.CharField(required=True, write_only=True)
+    
+    def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError({
+                'confirm_password': 'Les mots de passe ne correspondent pas'
+            })
+        return data
+    
+    def validate_new_password(self, value):
+        if len(value) < 8:
+            raise serializers.ValidationError(
+                'Le mot de passe doit contenir au moins 8 caractères'
+            )
+        return value

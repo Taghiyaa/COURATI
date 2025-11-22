@@ -7,7 +7,9 @@ from django.core.cache import cache
 from django.contrib.auth import get_user_model
 from django.utils.translation import gettext_lazy as _
 from django.db.models import Count, Sum, Avg, Q, F
+from django.db import models
 from django.shortcuts import get_object_or_404
+
 
 from rest_framework import status, permissions, generics
 from rest_framework.views import APIView
@@ -16,9 +18,10 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework.permissions import IsAuthenticated
 
 from .models import StudentProfile, Level, Major
-from accounts.models import TeacherProfile, TeacherAssignment
+from accounts.models import AdminProfile, TeacherProfile, TeacherAssignment
 from .serializers import (
     CustomTokenObtainPairSerializer,
     RegisterSerializer,
@@ -29,7 +32,11 @@ from .serializers import (
     MajorSerializer,
     LevelSimpleSerializer,
     MajorSimpleSerializer,
-    AdminDashboardSerializer
+    AdminDashboardSerializer,
+    WebAdminProfileDetailSerializer,
+    WebTeacherProfileDetailSerializer,
+    WebUpdateProfileSerializer,
+    WebChangePasswordSerializer
 )
 from courses.models import Subject, Document, Quiz, QuizAttempt, UserActivity,  UserFavorite
 from accounts.permissions import IsAdminPermission
@@ -2363,5 +2370,265 @@ class AdminStudentExportView(APIView):
             return Response({
                 'success': False,
                 'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========================================
+# PROFILE VIEWS - WEB (Admin/Teacher)
+# Pour l'interface web uniquement
+# ========================================
+
+class ProfileView(APIView):
+    """
+    GET: Récupérer le profil de l'utilisateur connecté (Admin/Teacher)
+    PATCH: Modifier le profil
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Récupérer le profil complet"""
+        user = request.user
+        logger.info(f"📋 [WEB] Récupération profil: {user.username} ({user.role})")
+        
+        try:
+            if user.is_admin():
+                # Récupérer ou créer le profil admin
+                profile, created = AdminProfile.objects.get_or_create(user=user)
+                if created:
+                    logger.info(f"✅ Profil admin créé pour {user.username}")
+                
+                serializer = WebAdminProfileDetailSerializer(profile)
+            
+            elif user.is_teacher():
+                # Récupérer ou créer le profil teacher
+                profile, created = TeacherProfile.objects.get_or_create(user=user)
+                if created:
+                    logger.info(f"✅ Profil teacher créé pour {user.username}")
+                
+                serializer = WebTeacherProfileDetailSerializer(profile)
+            
+            else:
+                logger.warning(f"⚠️ Accès profil refusé: {user.username} ({user.role})")
+                return Response({
+                    'success': False,
+                    'error': 'Seuls les administrateurs et professeurs peuvent accéder à cette page'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            return Response({
+                'success': True,
+                'profile': serializer.data
+            })
+        
+        except Exception as e:
+            logger.error(f"❌ Erreur récupération profil: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur lors de la récupération du profil',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def patch(self, request):
+        """Modifier les informations du profil"""
+        user = request.user
+        logger.info(f"✏️ [WEB] Modification profil: {user.username} ({user.role})")
+        
+        serializer = WebUpdateProfileSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            logger.warning(f"⚠️ Données invalides: {serializer.errors}")
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            data = serializer.validated_data
+            
+            # Mettre à jour les champs User (communs)
+            if 'first_name' in data:
+                user.first_name = data['first_name']
+            if 'last_name' in data:
+                user.last_name = data['last_name']
+            user.save()
+            
+            # Mettre à jour le profil selon le rôle
+            if user.is_admin():
+                profile, _ = AdminProfile.objects.get_or_create(user=user)
+                
+                if 'phone_number' in data:
+                    profile.phone_number = data['phone_number']
+                if 'department' in data:
+                    profile.department = data['department']
+                
+                profile.save()
+                logger.info(f"✅ Profil admin mis à jour: {user.username}")
+            
+            elif user.is_teacher():
+                profile, _ = TeacherProfile.objects.get_or_create(user=user)
+                
+                if 'phone_number' in data:
+                    profile.phone_number = data['phone_number']
+                if 'specialization' in data:
+                    profile.specialization = data['specialization']
+                if 'bio' in data:
+                    profile.bio = data['bio']
+                if 'office' in data:
+                    profile.office = data['office']
+                if 'office_hours' in data:
+                    profile.office_hours = data['office_hours']
+                
+                profile.save()
+                logger.info(f"✅ Profil teacher mis à jour: {user.username}")
+            
+            return Response({
+                'success': True,
+                'message': 'Profil mis à jour avec succès'
+            })
+        
+        except Exception as e:
+            logger.error(f"❌ Erreur modification profil: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur lors de la mise à jour du profil',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class WebChangePasswordView(APIView):
+    """
+    Changement de mot de passe pour interface WEB (Admin/Teacher)
+    Utilise old_password au lieu de current_password (différent du mobile)
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        user = request.user
+        logger.info(f"🔒 [WEB] Changement mot de passe: {user.username} ({user.role})")
+        
+        serializer = WebChangePasswordSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            logger.warning(f"⚠️ Données invalides: {serializer.errors}")
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Vérifier l'ancien mot de passe
+            if not user.check_password(serializer.validated_data['old_password']):
+                logger.warning(f"⚠️ Ancien mot de passe incorrect: {user.username}")
+                return Response({
+                    'success': False,
+                    'error': 'Mot de passe actuel incorrect'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Vérifier que le nouveau mot de passe est différent
+            if user.check_password(serializer.validated_data['new_password']):
+                return Response({
+                    'success': False,
+                    'error': 'Le nouveau mot de passe doit être différent de l\'ancien'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Définir le nouveau mot de passe
+            user.set_password(serializer.validated_data['new_password'])
+            user.save()
+            
+            logger.info(f"✅ [WEB] Mot de passe changé: {user.username}")
+            
+            return Response({
+                'success': True,
+                'message': 'Mot de passe modifié avec succès'
+            })
+        
+        except Exception as e:
+            logger.error(f"❌ Erreur changement mot de passe: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur lors du changement de mot de passe',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ProfileStatsView(APIView):
+    """
+    Statistiques du profil (pour TEACHER uniquement)
+    Affiche le nombre de documents, quiz, matières, vues et téléchargements
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Récupérer les statistiques du professeur"""
+        user = request.user
+        
+        if not user.is_teacher():
+            logger.warning(f"⚠️ Accès stats refusé: {user.username} ({user.role})")
+            return Response({
+                'success': False,
+                'error': 'Cette fonctionnalité est réservée aux professeurs'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        try:
+            from courses.models import Document, Quiz
+            
+            logger.info(f"📊 Récupération stats: {user.username}")
+            
+            # Nombre de documents uploadés
+            documents_count = Document.objects.filter(created_by=user).count()
+            
+            # Nombre de quiz créés
+            quizzes_count = Quiz.objects.filter(created_by=user).count()
+            
+            # Nombre de matières assignées
+            subjects_count = TeacherAssignment.objects.filter(
+                teacher=user, 
+                is_active=True
+            ).count()
+            
+            # Total des vues de documents
+            total_views = Document.objects.filter(
+                created_by=user
+            ).aggregate(
+                total=models.Sum('view_count')
+            )['total'] or 0
+            
+            # Total des téléchargements
+            total_downloads = Document.objects.filter(
+                created_by=user
+            ).aggregate(
+                total=models.Sum('download_count')
+            )['total'] or 0
+            
+            logger.info(f"✅ Stats récupérées: {user.username} - {documents_count} docs, {quizzes_count} quiz")
+            
+            return Response({
+                'success': True,
+                'stats': {
+                    'documents_count': documents_count,
+                    'quizzes_count': quizzes_count,
+                    'subjects_count': subjects_count,
+                    'total_views': total_views,
+                    'total_downloads': total_downloads
+                }
+            })
+        
+        except Exception as e:
+            logger.error(f"❌ Erreur récupération stats: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur lors de la récupération des statistiques',
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

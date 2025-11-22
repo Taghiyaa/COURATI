@@ -1324,8 +1324,15 @@ class SubjectAdminDetailSerializer(serializers.ModelSerializer):
 
 class SubjectAdminListSerializer(serializers.ModelSerializer):
     """Serializer simple pour la liste admin"""
+    # ✅ AJOUT : Champs pour les IDs (pour le formulaire de modification)
+    levels = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    majors = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    
+    # Champs pour l'affichage (noms)
     level_names = serializers.SerializerMethodField()
     major_names = serializers.SerializerMethodField()
+    
+    # Statistiques
     total_documents = serializers.IntegerField(read_only=True)
     total_teachers = serializers.SerializerMethodField()
     
@@ -1336,8 +1343,10 @@ class SubjectAdminListSerializer(serializers.ModelSerializer):
             'name',
             'code',
             'description',
-            'level_names',
-            'major_names',
+            'levels',           # ✅ AJOUTÉ - IDs des niveaux [1, 2, 3]
+            'level_names',      # Noms des niveaux ['L1', 'L2']
+            'majors',           # ✅ AJOUTÉ - IDs des filières [4, 5]
+            'major_names',      # Noms des filières ['Info', 'Math']
             'credits',
             'is_active',
             'is_featured',
@@ -1348,12 +1357,15 @@ class SubjectAdminListSerializer(serializers.ModelSerializer):
         ]
     
     def get_level_names(self, obj):
+        """Retourne les noms des niveaux pour l'affichage"""
         return [level.name for level in obj.levels.all()]
     
     def get_major_names(self, obj):
+        """Retourne les noms des filières pour l'affichage"""
         return [major.name for major in obj.majors.all()]
     
     def get_total_teachers(self, obj):
+        """Compte le nombre de professeurs assignés"""
         from accounts.models import TeacherAssignment
         return TeacherAssignment.objects.filter(
             subject=obj,
@@ -1628,8 +1640,8 @@ class QuizAdminListSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     
     # ✅ Ces champs utiliseront les propriétés du modèle
-    question_count = serializers.ReadOnlyField()
-    total_attempts = serializers.SerializerMethodField()
+    question_count = serializers.IntegerField(read_only=True)
+    total_attempts = serializers.IntegerField(read_only=True)
     
     class Meta:
         model = Quiz

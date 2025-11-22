@@ -9,9 +9,9 @@ export function useAuth() {
   const queryClient = useQueryClient();
   const { user, isAuthenticated, logout: logoutStore } = useAuthStore();
 
-  // Query pour récupérer le profil utilisateur
+  // Query pour récupérer l'utilisateur connecté (clé distincte pour éviter conflit avec la page Profil)
   const { data: profile, isLoading: isLoadingProfile } = useQuery({
-    queryKey: ['profile'],
+    queryKey: ['auth_user'],
     queryFn: authAPI.getProfile,
     enabled: isAuthenticated && !!localStorage.getItem('access_token'),
     retry: false,

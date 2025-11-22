@@ -70,6 +70,15 @@ urlpatterns = [
     path('admin/subjects/<int:subject_id>/toggle-active/', views.AdminSubjectToggleActiveView.as_view(), name='admin-subject-toggle-active'),
     path('admin/subjects/<int:subject_id>/toggle-featured/', views.AdminSubjectToggleFeaturedView.as_view(), name='admin-subject-toggle-featured'),
 
+    # ========================================
+    # ✅ NOUVEAU - APIs ADMIN - Gestion des documents
+    # ========================================
+    path('admin/documents/', views.AdminDocumentListView.as_view(), name='admin-documents'),
+    path('admin/documents/<int:document_id>/', views.AdminDocumentDetailView.as_view(), name='admin-document-detail'),
+    path('admin/documents/<int:document_id>/toggle-active/', views.AdminDocumentToggleActiveView.as_view(), name='admin-document-toggle-active'),
+    path('admin/documents/bulk-action/', views.AdminDocumentBulkActionView.as_view(), name='admin-document-bulk-action'),
+    path('admin/subjects/<int:subject_id>/documents/', views.AdminSubjectDocumentsView.as_view(), name='admin-subject-documents'),
+
     #  APIs ADMIN - Gestion des quiz
     path('admin/quizzes/', views.AdminQuizListCreateView.as_view(), name='admin-quizzes'),
     path('admin/quizzes/<int:quiz_id>/', views.AdminQuizDetailView.as_view(), name='admin-quiz-detail'),

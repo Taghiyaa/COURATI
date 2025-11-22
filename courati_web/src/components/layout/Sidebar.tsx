@@ -7,6 +7,7 @@ import {
   Users, 
   UserCheck, 
   FileQuestion,
+  FileText,
   X
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -37,6 +38,11 @@ const menuItems = [
     name: 'Matières', 
     path: '/admin/subjects', 
     icon: Library 
+  },
+  { 
+    name: 'Documents', 
+    path: '/admin/documents', 
+    icon: FileText 
   },
   { 
     name: 'Enseignants', 

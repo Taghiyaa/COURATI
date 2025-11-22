@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Library, FileText, FileQuestion, User } from 'lucide-react';
+import { LayoutDashboard, Library, FileText, FileQuestion } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import Logo from '../common/Logo';
 
@@ -13,7 +13,6 @@ const menuItems = [
   { name: 'Mes Matières', path: '/teacher/subjects', icon: Library },
   { name: 'Mes Documents', path: '/teacher/documents', icon: FileText },
   { name: 'Mes Quiz', path: '/teacher/quizzes', icon: FileQuestion },
-  { name: 'Profil', path: '/teacher/profile', icon: User },
 ];
 
 export default function TeacherSidebar({ isOpen, onClose }: SidebarProps) {

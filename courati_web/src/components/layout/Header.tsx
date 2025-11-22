@@ -125,7 +125,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
                 {/* Menu Items */}
                 <Link
-                  to="/admin/profile"
+                  to={user?.role === 'TEACHER' ? '/teacher/profile' : '/admin/profile'}
                   onClick={() => setIsDropdownOpen(false)}
                   className="flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                 >
@@ -133,14 +133,16 @@ export default function Header({ onMenuClick }: HeaderProps) {
                   <span>Mon Profil</span>
                 </Link>
 
-                <Link
-                  to="/admin/settings"
-                  onClick={() => setIsDropdownOpen(false)}
-                  className="flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  <Settings className="h-4 w-4" />
-                  <span>Paramètres</span>
-                </Link>
+                {user?.role === 'ADMIN' && (
+                  <Link
+                    to="/admin/settings"
+                    onClick={() => setIsDropdownOpen(false)}
+                    className="flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span>Paramètres</span>
+                  </Link>
+                )}
 
                 <div className="border-t border-gray-100 my-1"></div>
 

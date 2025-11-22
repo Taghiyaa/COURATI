@@ -13,7 +13,6 @@ interface SubjectModalProps {
   onSuccess: () => void;
 }
 
-// Type simplifié pour le formulaire
 interface SubjectFormData {
   name: string;
   code: string;
@@ -36,32 +35,67 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
   });
 
   // Charger les niveaux
-  const { data: levels = [] } = useQuery({
+  const { data: levelsResponse } = useQuery({
     queryKey: ['levels'],
     queryFn: levelsAPI.getAll,
   });
 
   // Charger les filières
-  const { data: majors = [] } = useQuery({
+  const { data: majorsResponse } = useQuery({
     queryKey: ['majors'],
     queryFn: majorsAPI.getAll,
   });
 
-  // Modification: préremplissage correct dépendant du chargement des listes
+  // ✅ Extraire les données correctement
+  const levels = Array.isArray(levelsResponse) 
+    ? levelsResponse 
+    : levelsResponse?.results || levelsResponse?.levels || [];
+
+  const majors = Array.isArray(majorsResponse) 
+    ? majorsResponse 
+    : majorsResponse?.results || majorsResponse?.majors || [];
+
+  // ✅ Pré-remplir le formulaire en mode édition
   useEffect(() => {
     if (subject && levels.length > 0 && majors.length > 0) {
+      // Extraire les IDs des niveaux
+      let levelIds: number[] = [];
+      if (Array.isArray(subject.levels)) {
+        levelIds = subject.levels.map((l: any) => {
+          if (typeof l === 'number') return l;
+          if (l?.id) return l.id;
+          return null;
+        }).filter((id): id is number => id !== null);
+      }
+
+      // Extraire les IDs des filières
+      let majorIds: number[] = [];
+      if (Array.isArray(subject.majors)) {
+        majorIds = subject.majors.map((m: any) => {
+          if (typeof m === 'number') return m;
+          if (m?.id) return m.id;
+          return null;
+        }).filter((id): id is number => id !== null);
+      }
+
       setFormData({
-        name: subject.name,
-        code: subject.code,
+        name: subject.name || '',
+        code: subject.code || '',
         description: subject.description || '',
-        levels: Array.isArray(subject.levels)
-          ? subject.levels.map((l: any) => typeof l === 'number' ? l : (l?.id ?? l))
-          : [],
-        majors: Array.isArray(subject.majors)
-          ? subject.majors.map((m: any) => typeof m === 'number' ? m : (m?.id ?? m))
-          : [],
+        levels: levelIds,
+        majors: majorIds,
         credits: (subject as any).credits || 3,
         semester: (subject as any).semester || 1,
+      });
+
+      console.log('📝 Formulaire pré-rempli:', {
+        subject,
+        levelIds,
+        majorIds,
+        formData: {
+          levels: levelIds,
+          majors: majorIds,
+        }
       });
     }
   }, [subject, levels, majors]);
@@ -73,34 +107,63 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
         ? subjectsAPI.update(subject.id, data as any)
         : subjectsAPI.create(data as any),
     onSuccess: () => {
-      toast.success(subject ? 'Matière modifiée' : 'Matière créée');
+      toast.success(subject ? 'Matière modifiée avec succès' : 'Matière créée avec succès');
       onSuccess();
     },
     onError: (error: any) => {
-      const errorMsg = error.response?.data?.message || 'Une erreur est survenue';
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || 'Une erreur est survenue';
       toast.error(errorMsg);
+      console.error('❌ Erreur mutation:', error.response?.data);
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validations
+    if (!formData.name.trim()) {
+      toast.error('Le nom est requis');
+      return;
+    }
+    if (!formData.code.trim()) {
+      toast.error('Le code est requis');
+      return;
+    }
     if (formData.levels.length === 0) {
-      toast.error('Veuillez sélectionner au moins un niveau.');
+      toast.error('Veuillez sélectionner au moins un niveau');
       return;
     }
     if (formData.majors.length === 0) {
-      toast.error('Veuillez sélectionner au moins une filière.');
+      toast.error('Veuillez sélectionner au moins une filière');
       return;
     }
+
+    console.log('📤 Envoi du formulaire:', formData);
     mutation.mutate(formData);
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: name === 'level' || name === 'major' ? parseInt(value) : value,
-    }));
+  const toggleLevel = (levelId: number) => {
+    setFormData((prev) => {
+      const exists = prev.levels.includes(levelId);
+      const newLevels = exists 
+        ? prev.levels.filter((id) => id !== levelId) 
+        : [...prev.levels, levelId];
+      
+      console.log('🔄 Toggle niveau:', { levelId, exists, newLevels });
+      return { ...prev, levels: newLevels };
+    });
+  };
+
+  const toggleMajor = (majorId: number) => {
+    setFormData((prev) => {
+      const exists = prev.majors.includes(majorId);
+      const newMajors = exists 
+        ? prev.majors.filter((id) => id !== majorId) 
+        : [...prev.majors, majorId];
+      
+      console.log('🔄 Toggle filière:', { majorId, exists, newMajors });
+      return { ...prev, majors: newMajors };
+    });
   };
 
   return (
@@ -120,7 +183,7 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Nom */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -128,12 +191,11 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
             </label>
             <input
               type="text"
-              name="name"
               value={formData.name}
-              onChange={handleChange}
-              required
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               placeholder="Ex: Mathématiques"
+              required
             />
           </div>
 
@@ -144,12 +206,11 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
             </label>
             <input
               type="text"
-              name="code"
               value={formData.code}
-              onChange={handleChange}
-              required
+              onChange={(e) => setFormData({ ...formData, code: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               placeholder="Ex: MATH101"
+              required
             />
           </div>
 
@@ -159,90 +220,81 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
               Description
             </label>
             <textarea
-              name="description"
               value={formData.description}
-              onChange={handleChange}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={3}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               placeholder="Description de la matière..."
             />
           </div>
 
-          {/* Sélection Niveaux */}
+          {/* Niveaux - Pills avec sélection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Niveaux <span className="text-red-500">*</span>
+              Niveaux * <span className="text-xs text-gray-500">({formData.levels.length} sélectionné{formData.levels.length > 1 ? 's' : ''})</span>
             </label>
             <div className="flex flex-wrap gap-2">
-              {levels.map((level: Level) => {
-                const checked = formData.levels.includes(level.id);
-                return (
-                  <label
-                    key={level.id}
-                    className={`inline-flex items-center rounded-full px-4 py-2 border cursor-pointer select-none text-sm font-medium transition-all
-                              ${checked ? 'bg-primary-100 border-primary-500 text-primary-700 font-semibold shadow' : 'bg-white border-gray-300 text-gray-700'}
-                              hover:border-primary-500 focus-within:ring-2 focus-within:ring-primary-400 focus:z-10`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => {
-                        setFormData((prev) => {
-                          const exists = prev.levels.includes(level.id);
-                          return {
-                            ...prev,
-                            levels: exists ? prev.levels.filter((id) => id !== level.id) : [...prev.levels, level.id],
-                          };
-                        });
-                      }}
-                      className="hidden"
-                    />
-                    {level.code} - {level.name}
-                  </label>
-                );
-              })}
+              {levels.length > 0 ? (
+                levels.map((level: Level) => {
+                  const isSelected = formData.levels.includes(level.id);
+                  return (
+                    <button
+                      key={level.id}
+                      type="button"
+                      onClick={() => toggleLevel(level.id)}
+                      className={`
+                        inline-flex items-center px-4 py-2 rounded-full text-sm font-medium border-2 transition-all
+                        ${isSelected 
+                          ? 'bg-primary-100 border-primary-500 text-primary-700 shadow-sm' 
+                          : 'bg-white border-gray-300 text-gray-700 hover:border-primary-300'
+                        }
+                      `}
+                    >
+                      {level.code} - {level.name}
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="text-sm text-gray-500">Aucun niveau disponible</p>
+              )}
             </div>
             {formData.levels.length === 0 && (
-              <p className="text-xs text-red-500 mt-1">Veuillez sélectionner au moins un niveau.</p>
+              <p className="text-xs text-red-500 mt-2">⚠️ Sélectionnez au moins un niveau</p>
             )}
           </div>
 
-          {/* Sélection Filières */}
+          {/* Filières - Pills avec sélection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Filières <span className="text-red-500">*</span>
+              Filières * <span className="text-xs text-gray-500">({formData.majors.length} sélectionnée{formData.majors.length > 1 ? 's' : ''})</span>
             </label>
             <div className="flex flex-wrap gap-2">
-              {majors.map((major: Major) => {
-                const checked = formData.majors.includes(major.id);
-                return (
-                  <label
-                    key={major.id}
-                    className={`inline-flex items-center rounded-full px-4 py-2 border cursor-pointer select-none text-sm font-medium transition-all
-                              ${checked ? 'bg-primary-100 border-primary-500 text-primary-700 font-semibold shadow' : 'bg-white border-gray-300 text-gray-700'}
-                              hover:border-primary-500 focus-within:ring-2 focus-within:ring-primary-400 focus:z-10`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => {
-                        setFormData((prev) => {
-                          const exists = prev.majors.includes(major.id);
-                          return {
-                            ...prev,
-                            majors: exists ? prev.majors.filter((id) => id !== major.id) : [...prev.majors, major.id],
-                          };
-                        });
-                      }}
-                      className="hidden"
-                    />
-                    {major.code} - {major.name}
-                  </label>
-                );
-              })}
+              {majors.length > 0 ? (
+                majors.map((major: Major) => {
+                  const isSelected = formData.majors.includes(major.id);
+                  return (
+                    <button
+                      key={major.id}
+                      type="button"
+                      onClick={() => toggleMajor(major.id)}
+                      className={`
+                        inline-flex items-center px-4 py-2 rounded-full text-sm font-medium border-2 transition-all
+                        ${isSelected 
+                          ? 'bg-green-100 border-green-500 text-green-700 shadow-sm' 
+                          : 'bg-white border-gray-300 text-gray-700 hover:border-green-300'
+                        }
+                      `}
+                    >
+                      {major.code} - {major.name}
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="text-sm text-gray-500">Aucune filière disponible</p>
+              )}
             </div>
             {formData.majors.length === 0 && (
-              <p className="text-xs text-red-500 mt-1">Veuillez sélectionner au moins une filière.</p>
+              <p className="text-xs text-red-500 mt-2">⚠️ Sélectionnez au moins une filière</p>
             )}
           </div>
 
@@ -250,14 +302,12 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Crédits *
+                Crédits
               </label>
               <input
                 type="number"
-                name="credits"
                 value={formData.credits}
-                onChange={(e) => setFormData(prev => ({ ...prev, credits: parseInt(e.target.value) || 0 }))}
-                required
+                onChange={(e) => setFormData({ ...formData, credits: parseInt(e.target.value) || 0 })}
                 min="1"
                 max="12"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -265,36 +315,38 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Semestre *
+                Semestre
               </label>
               <select
-                name="semester"
                 value={formData.semester}
-                onChange={(e) => setFormData(prev => ({ ...prev, semester: parseInt(e.target.value) }))}
-                required
+                onChange={(e) => setFormData({ ...formData, semester: parseInt(e.target.value) })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               >
-                <option value="1">Semestre 1</option>
-                <option value="2">Semestre 2</option>
+                <option value={1}>Semestre 1</option>
+                <option value={2}>Semestre 2</option>
               </select>
             </div>
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
+          <div className="flex items-center justify-end space-x-3 pt-6 border-t border-gray-200">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
             >
               Annuler
             </button>
             <button
               type="submit"
               disabled={mutation.isPending}
-              className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50"
+              className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {mutation.isPending ? 'Enregistrement...' : subject ? 'Modifier' : 'Créer'}
+              {mutation.isPending
+                ? 'Enregistrement...'
+                : subject
+                ? 'Enregistrer'
+                : 'Créer'}
             </button>
           </div>
         </form>

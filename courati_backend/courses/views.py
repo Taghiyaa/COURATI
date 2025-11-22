@@ -2733,37 +2733,77 @@ class AdminQuizListCreateView(APIView):
         logger.info(f"📝 Liste quiz par admin: {request.user.username}")
         
         try:
-            # Récupérer tous les quiz
-            queryset = Quiz.objects.all().select_related('subject', 'created_by')
+            from django.db.models import Count, Q
+            
+            # Récupérer tous les quiz avec optimisation
+            queryset = Quiz.objects.select_related(
+                'subject', 'created_by'
+            ).prefetch_related('questions', 'attempts')
             
             # Filtres
             is_active = request.GET.get('is_active', None)
             if is_active is not None:
                 queryset = queryset.filter(is_active=is_active.lower() == 'true')
             
-            # Filtrer par matière
             subject_id = request.GET.get('subject', None)
             if subject_id:
                 queryset = queryset.filter(subject_id=subject_id)
             
-            # Recherche par titre
             search = request.GET.get('search', None)
             if search:
                 queryset = queryset.filter(title__icontains=search)
             
-            # Annoter avec statistiques
-            queryset = queryset.annotate(
-                question_count=Count('questions'),
-                total_attempts=Count('attempts')
-            ).order_by('-created_at')
+            queryset = queryset.order_by('-created_at')
             
-            # Sérialiser
-            serializer = QuizAdminListSerializer(queryset, many=True)
+            # ✅ Construction manuelle des données avec calcul du taux de réussite
+            quiz_list = []
+            for quiz in queryset:
+                # ✅ Calculer le taux de réussite
+                pass_rate = None
+                completed_attempts = quiz.attempts.filter(status='COMPLETED')
+                total_completed = completed_attempts.count()
+                
+                if total_completed > 0:
+                    # Calculer le score de passage en points (pas en pourcentage)
+                    total_points = quiz.total_points
+                    if total_points > 0:
+                        # Score minimum pour réussir
+                        passing_score = (float(total_points) * float(quiz.passing_percentage)) / 100.0
+                        
+                        # Compter les tentatives qui ont réussi
+                        passed_attempts = completed_attempts.filter(
+                            score__gte=passing_score
+                        ).count()
+                        
+                        # Calculer le pourcentage de réussite
+                        pass_rate = round((passed_attempts / total_completed) * 100, 1)
+                        
+                        logger.debug(f"📊 Quiz {quiz.id} '{quiz.title}': {passed_attempts}/{total_completed} réussis (score min: {passing_score}/{total_points}) = {pass_rate}%")
+                
+                quiz_data = {
+                    'id': quiz.id,
+                    'title': quiz.title,
+                    'subject': quiz.subject.id,
+                    'subject_name': quiz.subject.name,
+                    'subject_code': quiz.subject.code,
+                    'duration_minutes': quiz.duration_minutes,
+                    'passing_percentage': float(quiz.passing_percentage),
+                    'max_attempts': quiz.max_attempts,
+                    'is_active': quiz.is_active,
+                    'question_count': quiz.questions.count(),
+                    'total_attempts': quiz.attempts.count(),
+                    'pass_rate': pass_rate,  # ✅ AJOUTÉ
+                    'created_by_name': quiz.created_by.get_full_name() if quiz.created_by else 'Inconnu',
+                    'created_at': quiz.created_at.isoformat() if quiz.created_at else None,
+                    'available_from': quiz.available_from.isoformat() if quiz.available_from else None,
+                    'available_until': quiz.available_until.isoformat() if quiz.available_until else None,
+                }
+                quiz_list.append(quiz_data)
             
             return Response({
                 'success': True,
-                'total_quizzes': queryset.count(),
-                'quizzes': serializer.data,
+                'total_quizzes': len(quiz_list),
+                'quizzes': quiz_list,
                 'filters_applied': {
                     'is_active': is_active,
                     'subject': subject_id,
@@ -2773,6 +2813,9 @@ class AdminQuizListCreateView(APIView):
             
         except Exception as e:
             logger.error(f"❌ Erreur liste quiz: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
             return Response({
                 'success': False,
                 'error': 'Erreur serveur',
@@ -3866,4 +3909,358 @@ class TeacherUpdateSubjectView(APIView):
                 'success': False,
                 'error': 'Erreur serveur',
                 'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========================================
+# ADMIN - GESTION DES DOCUMENTS
+# ========================================
+
+class AdminDocumentListView(APIView):
+    """
+    Liste de TOUS les documents avec filtres
+    GET /api/courses/admin/documents/
+    Filtres disponibles: ?subject=1&teacher=2&type=PDF&is_active=true&search=math&page=1&page_size=20
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request):
+        """Liste globale de tous les documents"""
+        logger.info(f"📋 Liste admin documents par: {request.user.username}")
+        
+        try:
+            # Récupérer tous les documents avec relations
+            queryset = Document.objects.select_related(
+                'subject', 'created_by'
+            ).prefetch_related(
+                'subject__levels', 'subject__majors'
+            ).order_by('-created_at')
+            
+            # ===== FILTRES =====
+            
+            # Filtre par matière
+            subject_id = request.GET.get('subject')
+            if subject_id:
+                queryset = queryset.filter(subject_id=subject_id)
+            
+            # Filtre par professeur
+            teacher_id = request.GET.get('teacher')
+            if teacher_id:
+                queryset = queryset.filter(created_by_id=teacher_id)
+            
+            # Filtre par type de document
+            doc_type = request.GET.get('type')
+            if doc_type:
+                queryset = queryset.filter(document_type=doc_type)
+            
+            # Filtre par statut actif
+            is_active = request.GET.get('is_active')
+            if is_active is not None:
+                queryset = queryset.filter(is_active=is_active.lower() == 'true')
+            
+            # Recherche par titre ou description
+            search = request.GET.get('search')
+            if search:
+                from django.db.models import Q
+                queryset = queryset.filter(
+                    Q(title__icontains=search) | 
+                    Q(description__icontains=search)
+                )
+            
+            # ===== PAGINATION =====
+            page = int(request.GET.get('page', 1))
+            page_size = int(request.GET.get('page_size', 20))
+            start = (page - 1) * page_size
+            end = start + page_size
+            
+            total = queryset.count()
+            documents = queryset[start:end]
+            
+            # ===== SERIALIZATION =====
+            serializer = DocumentSerializer(
+                documents, 
+                many=True,
+                context={'request': request}
+            )
+            
+            return Response({
+                'success': True,
+                'total': total,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': (total + page_size - 1) // page_size,
+                'documents': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur liste documents admin: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminDocumentDetailView(APIView):
+    """
+    Détail, modification, suppression d'un document (ADMIN)
+    GET /api/courses/admin/documents/<id>/     - Voir détails
+    PATCH /api/courses/admin/documents/<id>/   - Modifier
+    DELETE /api/courses/admin/documents/<id>/  - Supprimer
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request, document_id):
+        """Récupérer les détails d'un document"""
+        try:
+            document = get_object_or_404(
+                Document.objects.select_related('subject', 'created_by'),
+                id=document_id
+            )
+            
+            serializer = DocumentSerializer(document, context={'request': request})
+            
+            return Response({
+                'success': True,
+                'document': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur détail document: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def patch(self, request, document_id):
+        """Modifier un document"""
+        try:
+            document = get_object_or_404(Document, id=document_id)
+            
+            # Mettre à jour les champs fournis
+            if 'title' in request.data:
+                document.title = request.data['title']
+            
+            if 'description' in request.data:
+                document.description = request.data['description']
+            
+            if 'document_type' in request.data:
+                document.document_type = request.data['document_type']
+            
+            if 'is_active' in request.data:
+                document.is_active = request.data['is_active']
+            
+            if 'is_premium' in request.data:
+                document.is_premium = request.data['is_premium']
+            
+            document.save()
+            
+            serializer = DocumentSerializer(document, context={'request': request})
+            
+            logger.info(f"✅ Document modifié par admin: {document.title}")
+            
+            return Response({
+                'success': True,
+                'message': 'Document modifié avec succès',
+                'document': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur modification document: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def delete(self, request, document_id):
+        """Supprimer un document définitivement"""
+        try:
+            document = get_object_or_404(Document, id=document_id)
+            
+            title = document.title
+            
+            # Supprimer le fichier physique du serveur
+            if document.file:
+                try:
+                    document.file.delete(save=False)
+                except Exception as e:
+                    logger.warning(f"⚠️ Erreur suppression fichier physique: {str(e)}")
+            
+            # Supprimer l'entrée de la base de données
+            document.delete()
+            
+            logger.info(f"✅ Document supprimé par admin: {title}")
+            
+            return Response({
+                'success': True,
+                'message': f'Document "{title}" supprimé avec succès'
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur suppression document: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminDocumentToggleActiveView(APIView):
+    """
+    Activer/Désactiver rapidement un document
+    POST /api/courses/admin/documents/<id>/toggle-active/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def post(self, request, document_id):
+        """Basculer le statut actif/inactif d'un document"""
+        try:
+            document = get_object_or_404(Document, id=document_id)
+            
+            # Inverser le statut
+            document.is_active = not document.is_active
+            document.save()
+            
+            status_text = "activé" if document.is_active else "désactivé"
+            
+            logger.info(f"✅ Document {status_text} par admin: {document.title}")
+            
+            return Response({
+                'success': True,
+                'message': f'Document {status_text} avec succès',
+                'is_active': document.is_active
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur toggle document: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminDocumentBulkActionView(APIView):
+    """
+    Actions en masse sur plusieurs documents
+    POST /api/courses/admin/documents/bulk-action/
+    
+    Body JSON:
+    {
+        "action": "activate" | "deactivate" | "delete",
+        "document_ids": [1, 2, 3, 4]
+    }
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def post(self, request):
+        """Effectuer une action sur plusieurs documents à la fois"""
+        try:
+            action = request.data.get('action')
+            document_ids = request.data.get('document_ids', [])
+            
+            # Validation
+            if not action or not document_ids:
+                return Response({
+                    'success': False,
+                    'error': 'Les champs "action" et "document_ids" sont requis'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Récupérer les documents concernés
+            documents = Document.objects.filter(id__in=document_ids)
+            count = documents.count()
+            
+            if count == 0:
+                return Response({
+                    'success': False,
+                    'error': 'Aucun document trouvé'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Exécuter l'action
+            if action == 'activate':
+                documents.update(is_active=True)
+                message = f'{count} document(s) activé(s)'
+                
+            elif action == 'deactivate':
+                documents.update(is_active=False)
+                message = f'{count} document(s) désactivé(s)'
+                
+            elif action == 'delete':
+                # Supprimer les fichiers physiques
+                for doc in documents:
+                    if doc.file:
+                        try:
+                            doc.file.delete(save=False)
+                        except Exception as e:
+                            logger.warning(f"⚠️ Erreur suppression fichier: {str(e)}")
+                
+                # Supprimer les entrées de la base
+                documents.delete()
+                message = f'{count} document(s) supprimé(s)'
+                
+            else:
+                return Response({
+                    'success': False,
+                    'error': f'Action invalide: {action}. Actions valides: activate, deactivate, delete'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            logger.info(f"✅ Action en masse par admin ({request.user.username}): {message}")
+            
+            return Response({
+                'success': True,
+                'message': message,
+                'count': count
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur action en masse: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminSubjectDocumentsView(APIView):
+    """
+    Liste des documents d'une matière spécifique (vue admin)
+    GET /api/courses/admin/subjects/<id>/documents/
+    """
+    permission_classes = [IsAdminPermission]
+    
+    def get(self, request, subject_id):
+        """Récupérer tous les documents d'une matière"""
+        try:
+            subject = get_object_or_404(Subject, id=subject_id)
+            
+            # Tous les documents de cette matière
+            documents = Document.objects.filter(
+                subject=subject
+            ).select_related('created_by').order_by('-created_at')
+            
+            serializer = DocumentSerializer(
+                documents, 
+                many=True,
+                context={'request': request}
+            )
+            
+            return Response({
+                'success': True,
+                'subject': {
+                    'id': subject.id,
+                    'name': subject.name,
+                    'code': subject.code
+                },
+                'total': documents.count(),
+                'documents': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur documents matière: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Erreur serveur'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

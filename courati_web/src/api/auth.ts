@@ -24,8 +24,21 @@ export const authAPI = {
   },
 
   getProfile: async (): Promise<User> => {
-    const response = await apiClient.get<User>('/api/auth/profile/');
-    return response.data;
+    // Web profile endpoint returns { success, profile: { user, ... } }
+    const response = await apiClient.get<any>('/api/auth/web/profile/');
+    const u = response.data?.profile?.user || response.data;
+    // Normalize to User type expected by the app
+    const user: User = {
+      id: Number(u.id),
+      username: String(u.username || ''),
+      email: String(u.email || ''),
+      first_name: String(u.first_name || ''),
+      last_name: String(u.last_name || ''),
+      role: (u.role as 'ADMIN' | 'TEACHER' | 'STUDENT') || 'ADMIN',
+      is_active: Boolean(u.is_active ?? true),
+      date_joined: String(u.date_joined || new Date().toISOString()),
+    };
+    return user;
   },
 
   refreshToken: async (refreshToken: string): Promise<{ access: string }> => {
