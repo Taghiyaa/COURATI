@@ -82,7 +82,7 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
         name: subject.name || '',
         code: subject.code || '',
         description: subject.description || '',
-        levels: levelIds,
+        levels: levelIds.length > 0 ? [levelIds[0]] : [],
         majors: majorIds,
         credits: (subject as any).credits || 3,
         semester: (subject as any).semester || 1,
@@ -129,8 +129,8 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
       toast.error('Le code est requis');
       return;
     }
-    if (formData.levels.length === 0) {
-      toast.error('Veuillez sélectionner au moins un niveau');
+    if (formData.levels.length !== 1) {
+      toast.error('Veuillez sélectionner exactement un niveau');
       return;
     }
     if (formData.majors.length === 0) {
@@ -145,11 +145,9 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
   const toggleLevel = (levelId: number) => {
     setFormData((prev) => {
       const exists = prev.levels.includes(levelId);
-      const newLevels = exists 
-        ? prev.levels.filter((id) => id !== levelId) 
-        : [...prev.levels, levelId];
-      
-      console.log('🔄 Toggle niveau:', { levelId, exists, newLevels });
+      // Sélection unique: si on clique un niveau différent -> remplace; si on reclique le même -> vide (l'utilisateur devra en choisir un)
+      const newLevels = exists ? [] : [levelId];
+      console.log('🔄 Sélection niveau (unique):', { levelId, exists, newLevels });
       return { ...prev, levels: newLevels };
     });
   };
@@ -228,10 +226,10 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
             />
           </div>
 
-          {/* Niveaux - Pills avec sélection */}
+          {/* Niveaux - Sélection UNIQUE */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Niveaux * <span className="text-xs text-gray-500">({formData.levels.length} sélectionné{formData.levels.length > 1 ? 's' : ''})</span>
+              Niveau * <span className="text-xs text-gray-500">(sélection unique)</span>
             </label>
             <div className="flex flex-wrap gap-2">
               {levels.length > 0 ? (
@@ -245,12 +243,12 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
                       className={`
                         inline-flex items-center px-4 py-2 rounded-full text-sm font-medium border-2 transition-all
                         ${isSelected 
-                          ? 'bg-primary-100 border-primary-500 text-primary-700 shadow-sm' 
+                          ? 'bg-primary-600 border-primary-600 text-white shadow-sm' 
                           : 'bg-white border-gray-300 text-gray-700 hover:border-primary-300'
                         }
                       `}
                     >
-                      {level.code} - {level.name}
+                      {isSelected ? '●' : '○'} {level.code} - {level.name}
                     </button>
                   );
                 })
@@ -258,8 +256,8 @@ export default function SubjectModal({ subject, onClose, onSuccess }: SubjectMod
                 <p className="text-sm text-gray-500">Aucun niveau disponible</p>
               )}
             </div>
-            {formData.levels.length === 0 && (
-              <p className="text-xs text-red-500 mt-2">⚠️ Sélectionnez au moins un niveau</p>
+            {formData.levels.length !== 1 && (
+              <p className="text-xs text-red-500 mt-2">⚠️ Sélectionnez exactement un niveau</p>
             )}
           </div>
 

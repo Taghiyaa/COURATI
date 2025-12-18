@@ -101,6 +101,13 @@ export default function StudentsPage() {
   // Utiliser directement les étudiants filtrés côté serveur
   const filteredStudents = students || [];
 
+  // Client-side pagination
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
+  const pageStart = (page - 1) * pageSize;
+  const pageItems = filteredStudents.slice(pageStart, pageStart + pageSize);
+
   // Mutation pour supprimer
   const deleteMutation = useMutation({
     mutationFn: studentsAPI.delete,
@@ -426,7 +433,7 @@ export default function StudentsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredStudents.map((student: Student) => {
+              {pageItems.map((student: Student) => {
                 const firstName = student.first_name || '';
                 const lastName = student.last_name || '';
                 const username = student.username || '';
@@ -532,6 +539,40 @@ export default function StudentsPage() {
             <Plus className="h-5 w-5" />
             <span>Créer un étudiant</span>
           </button>
+        </div>
+      )}
+
+      {/* Pagination (en bas) */}
+      {filteredStudents.length > 0 && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-gray-600">
+            Page {page} / {totalPages} • {filteredStudents.length} résultat(s)
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+            >
+              Précédent
+            </button>
+            <button 
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+            >
+              Suivant
+            </button>
+            <select 
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+            >
+              {[10, 20, 50].map((s) => (
+                <option key={s} value={s}>{s}/page</option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
 

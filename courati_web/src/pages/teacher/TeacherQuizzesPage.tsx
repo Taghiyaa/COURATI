@@ -65,6 +65,13 @@ export default function TeacherQuizzesPage() {
     ? response
     : (response?.quizzes || []);
 
+  // Client-side pagination
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const totalPages = Math.max(1, Math.ceil(quizzes.length / pageSize));
+  const pageStart = (page - 1) * pageSize;
+  const pageItems = quizzes.slice(pageStart, pageStart + pageSize);
+
   if (!response && isLoading) return <LoadingSpinner />;
   if (error) return <div className="text-red-600">Erreur: {(error as Error).message}</div>;
 
@@ -125,7 +132,7 @@ export default function TeacherQuizzesPage() {
             </tr>
           </thead>
           <tbody>
-            {quizzes.length > 0 ? quizzes.map((q: any) => (
+            {pageItems.length > 0 ? pageItems.map((q: any) => (
               <tr key={q.id} className="border-t">
                 <td className="py-3 px-4">
                   <div className="font-medium text-gray-900">{q.title}</div>
@@ -179,6 +186,40 @@ export default function TeacherQuizzesPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {quizzes.length > 0 && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-gray-600">
+            Page {page} / {totalPages} • {quizzes.length} résultat(s)
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+            >
+              Précédent
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+            >
+              Suivant
+            </button>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+            >
+              {[10, 20, 50].map((s) => (
+                <option key={s} value={s}>{s}/page</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

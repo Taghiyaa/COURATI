@@ -403,13 +403,32 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
   
   // ========================================
-  // LISTE DES MATIÈRES
+  // LISTE DES MATIÈRES - CORRIGÉ
   // ========================================
   
   Widget _buildSubjectsProgressList() {
     if (_subjects.isEmpty) {
-      return const Center(
-        child: Text('Aucune matière disponible'),
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            children: [
+              Icon(
+                Icons.subject_outlined,
+                size: 64,
+                color: Colors.grey.shade400,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Aucune matière disponible',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
     
@@ -427,6 +446,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
     final totalDocs = subjectProgress['total_documents'] ?? 0;
     final progressRate = (subjectProgress['completion_rate'] ?? 0.0).toDouble();
     final isCompleted = subjectProgress['is_completed'] ?? false;
+    
+    // Calculer le ratio pour la barre de progression (entre 0.0 et 1.0)
+    final progressRatio = totalDocs > 0 ? (viewedDocs / totalDocs).clamp(0.0, 1.0) : 0.0;
     
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -500,33 +522,22 @@ class _ProgressScreenState extends State<ProgressScreen> {
             
             const SizedBox(height: 12),
             
-            // Barre de progression
+            // Barre de progression - CORRIGÉ
             Row(
               children: [
                 Expanded(
-                  child: Stack(
-                    children: [
-                      // Fond
-                      Container(
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade200,
-                          borderRadius: BorderRadius.circular(10),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      height: 8,
+                      child: LinearProgressIndicator(
+                        value: progressRatio, // Utilise le ratio entre 0.0 et 1.0
+                        backgroundColor: Colors.grey.shade200,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          isCompleted ? Colors.green : AppColors.primary,
                         ),
                       ),
-                      
-                      // Progression
-                      FractionallySizedBox(
-                        widthFactor: progressRate / 100,
-                        child: Container(
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: isCompleted ? Colors.green : AppColors.primary,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
                 

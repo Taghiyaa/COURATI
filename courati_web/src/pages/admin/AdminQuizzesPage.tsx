@@ -5,7 +5,7 @@ import { adminQuizzesAPI } from '../../api/adminQuizzes';
 import { subjectsAPI } from '../../api/subjects';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { toast } from 'sonner';
-import { Brain, ClipboardList, Eye, Pencil, ToggleLeft, ToggleRight, Trash2, Search, Plus } from 'lucide-react';
+import { Brain, ClipboardList, Eye, Pencil, ToggleLeft, ToggleRight, Trash2, Search } from 'lucide-react';
 
 function getPassRateBadgeColor(passRate: number | null | undefined) {
   if (passRate == null) return 'bg-gray-100 text-gray-700 border-gray-300';
@@ -147,13 +147,7 @@ export default function AdminQuizzesPage() {
           </h1>
           <p className="text-gray-600 mt-1">{stats.total} quiz au total</p>
         </div>
-        <button 
-          onClick={() => navigate('/admin/quizzes/new')} 
-          className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          Créer un quiz
-        </button>
+        <div />
       </div>
 
       {/* ✅ STATISTIQUES CORRIGÉES */}

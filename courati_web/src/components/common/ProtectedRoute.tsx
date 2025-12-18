@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { Loader2 } from 'lucide-react';
 
@@ -9,7 +9,8 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
   const location = useLocation();
-  const { isAuthenticated, user, isLoading } = useAuthStore();
+  const navigate = useNavigate();
+  const { isAuthenticated, user, isLoading, logout } = useAuthStore();
 
   // Initialiser l'auth depuis le localStorage
   const token = localStorage.getItem('access_token');
@@ -50,6 +51,17 @@ export default function ProtectedRoute({ children, requiredRole }: ProtectedRout
               <p className="text-red-600">
                 Vous n'avez pas les permissions nécessaires pour accéder à cette page.
               </p>
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <button
+                  onClick={async () => {
+                    await logout();
+                    navigate('/login', { replace: true });
+                  }}
+                  className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600"
+                >
+                  Revenir à la connexion
+                </button>
+              </div>
             </div>
           </div>
         </div>

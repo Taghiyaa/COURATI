@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Edit, Trash2, BookOpen } from 'lucide-react';
 import { subjectsAPI } from '../../api/subjects';
+import { levelsAPI } from '../../api/levels';
+import { majorsAPI } from '../../api/majors';
 import { toast } from 'sonner';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import SubjectModal from '../../components/subjects/SubjectModal';
@@ -12,14 +14,19 @@ export default function SubjectsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [filterLevel, setFilterLevel] = useState<string>('');
+  const [filterMajor, setFilterMajor] = useState<string>('');
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
 
   // Récupérer les matières
   const { data: subjects, isLoading, isFetching, error } = useQuery({
-    queryKey: ['subjects', debouncedSearch],
+    queryKey: ['subjects', debouncedSearch, filterLevel, filterMajor],
     queryFn: async () => {
       try {
-        const data = await subjectsAPI.getAll({ search: debouncedSearch });
+        const params: any = { search: debouncedSearch };
+        if (filterLevel) params.level = filterLevel;
+        if (filterMajor) params.major = filterMajor;
+        const data = await subjectsAPI.getAll(params);
         console.log('Matières récupérées:', data);
         return data;
       } catch (err) {
@@ -29,6 +36,23 @@ export default function SubjectsPage() {
     },
     placeholderData: (prev) => prev as any,
   });
+
+  // Charger niveaux et filières pour filtres
+  const { data: levelsResp } = useQuery({
+    queryKey: ['levels'],
+    queryFn: levelsAPI.getAll,
+  });
+  const { data: majorsResp } = useQuery({
+    queryKey: ['majors'],
+    queryFn: majorsAPI.getAll,
+  });
+
+  const levels = Array.isArray(levelsResp)
+    ? levelsResp
+    : (levelsResp as any)?.levels || (levelsResp as any)?.results || [];
+  const majors = Array.isArray(majorsResp)
+    ? majorsResp
+    : (majorsResp as any)?.majors || (majorsResp as any)?.results || [];
 
   // Debounce search
   useEffect(() => {
@@ -137,6 +161,28 @@ export default function SubjectsPage() {
           {(isFetching || searchTerm !== debouncedSearch) && (
             <div className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-gray-300 border-t-transparent animate-spin" />
           )}
+        </div>
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <select
+            value={filterLevel}
+            onChange={(e) => setFilterLevel(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="">Tous les niveaux</option>
+            {(levels as any[]).map((lvl: any) => (
+              <option key={lvl.id} value={String(lvl.id)}>{lvl.name || lvl.code}</option>
+            ))}
+          </select>
+          <select
+            value={filterMajor}
+            onChange={(e) => setFilterMajor(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="">Toutes les filières</option>
+            {(majors as any[]).map((mj: any) => (
+              <option key={mj.id} value={String(mj.id)}>{mj.name || mj.code}</option>
+            ))}
+          </select>
         </div>
       </div>
 

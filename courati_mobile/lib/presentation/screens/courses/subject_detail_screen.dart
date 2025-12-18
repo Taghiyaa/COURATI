@@ -600,241 +600,251 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
   }
 
   Widget _buildHeaderBackground() {
-    // ✅ NOUVEAU : Calculer la progression de cette matière
-    final viewedDocs = _allDocuments.where((doc) => doc.isViewed == true).length;
-    
-    final totalDocs = _allDocuments.length;
-    final progressRate = totalDocs > 0 
-        ? ((viewedDocs / totalDocs) * 100).toStringAsFixed(1) 
-        : '0.0';
-    final isCompleted = totalDocs > 0 && viewedDocs == totalDocs;
+  // Calculer la progression de cette matière
+  final viewedDocs = _allDocuments.where((doc) => doc.isViewed == true).length;
+  final totalDocs = _allDocuments.length;
+  final progressRate = totalDocs > 0 
+      ? ((viewedDocs / totalDocs) * 100).toStringAsFixed(1) 
+      : '0.0';
+  final isCompleted = totalDocs > 0 && viewedDocs == totalDocs;
 
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.primary,
-            AppColors.primary.withOpacity(0.85),
-            AppColors.primary.withOpacity(0.7),
-          ],
-        ),
+  return Container(
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          AppColors.primary,
+          AppColors.primary.withOpacity(0.85),
+          AppColors.primary.withOpacity(0.7),
+        ],
       ),
-      child: Stack(
-        children: [
-          ..._buildFloatingIcons(),
-          
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 60, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.code,
-                          color: Colors.white,
-                          size: 14,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          widget.subject.code,
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.95),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+    ),
+    child: Stack(
+      children: [
+        ..._buildFloatingIcons(),
+        
+        SafeArea(
+          bottom: false, // ✅ Désactiver le SafeArea en bas
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 60, 20, 0), // ✅ Padding bottom à 0
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Code de la matière
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.3),
+                      width: 1,
                     ),
                   ),
-                  
-                  const SizedBox(height: 12),
-                  
-                  Text(
-                    widget.subject.name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 23,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: -0.5,
-                      height: 1.2,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // ✨ NOUVEAU : Section progression de la matière
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.3),
-                        width: 1,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.code,
+                        color: Colors.white,
+                        size: 14,
                       ),
+                      const SizedBox(width: 6),
+                      Text(
+                        widget.subject.code,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.95),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 10),
+                
+                // Nom de la matière
+                Text(
+                  widget.subject.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
+                    height: 1.2,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                
+                const SizedBox(height: 12),
+                
+                // Section progression
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.3),
+                      width: 1,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Row(
                               children: [
                                 Icon(
                                   isCompleted ? Icons.check_circle : Icons.trending_up,
                                   color: Colors.white,
-                                  size: 18,
+                                  size: 16,
                                 ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  isCompleted ? 'Matière complétée !' : 'Votre progression',
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.95),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    isCompleted ? 'Matière complétée !' : 'Votre progression',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.95),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ],
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isCompleted 
+                                  ? Colors.green.withOpacity(0.3)
+                                  : Colors.white.withOpacity(0.25),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.4),
+                                width: 1,
                               ),
-                              decoration: BoxDecoration(
-                                color: isCompleted 
-                                    ? Colors.green.withOpacity(0.3)
-                                    : Colors.white.withOpacity(0.25),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.4),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (isCompleted)
-                                    const Icon(
-                                      Icons.verified,
-                                      color: Colors.white,
-                                      size: 14,
-                                    ),
-                                  if (isCompleted) const SizedBox(width: 4),
-                                  Text(
-                                    '$progressRate%',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (isCompleted)
+                                  const Icon(
+                                    Icons.verified,
+                                    color: Colors.white,
+                                    size: 13,
                                   ),
-                                ],
-                              ),
+                                if (isCompleted) const SizedBox(width: 4),
+                                Text(
+                                  '$progressRate%',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        
-                        const SizedBox(height: 12),
-                        
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: LinearProgressIndicator(
-                            value: totalDocs > 0 ? (viewedDocs / totalDocs) : 0.0,
-                            backgroundColor: Colors.white.withOpacity(0.2),
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              isCompleted ? Colors.green : Colors.white
-                            ),
-                            minHeight: 8,
                           ),
-                        ),
-                        
-                        const SizedBox(height: 8),
-                        
-                        Text(
-                          isCompleted 
-                              ? 'Tous les documents ont été consultés '
-                              : '$viewedDocs/$totalDocs documents consultés',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.85),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 10),
+                      
+                      // Barre de progression
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: LinearProgressIndicator(
+                          value: totalDocs > 0 ? (viewedDocs / totalDocs) : 0.0,
+                          backgroundColor: Colors.white.withOpacity(0.2),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            isCompleted ? Colors.green : Colors.white
                           ),
+                          minHeight: 7,
                         ),
-                      ],
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Statistiques directement sous le nom
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 8,
-                    children: [
-                      _buildHeaderBadge(Icons.description, '${_allDocuments.length} documents'),
-                      _buildHeaderBadge(Icons.favorite, '${_favoriteDocuments.length} favoris'),
-                      _buildHeaderBadge(Icons.star, '${widget.subject.credits} crédits'),
-                      if (widget.subject.isFeatured)
-                        _buildHeaderBadge(Icons.verified, 'Recommandée'),
+                      ),
+                      
+                      const SizedBox(height: 6),
+                      
+                      // Texte de progression
+                      Text(
+                        isCompleted 
+                            ? 'Tous les documents ont été consultés'
+                            : '$viewedDocs/$totalDocs documents consultés',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.85),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ],
                   ),
-                ],
-              ),
+                ),
+                
+                const SizedBox(height: 12),
+                
+                // Statistiques (badges)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _buildHeaderBadge(Icons.description, '${_allDocuments.length} documents'),
+                    _buildHeaderBadge(Icons.favorite, '${_favoriteDocuments.length} favoris'),
+                    _buildHeaderBadge(Icons.star, '${widget.subject.credits} crédits'),
+                    // Badge "Recommandée" enlevé comme demandé
+                  ],
+                ),
+                // ✅ PLUS D'ESPACE ICI - l'espace en bas est maintenant minimal
+              ],
             ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   // Nouveau widget pour les badges dans le header
   Widget _buildHeaderBadge(IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.3),
-          width: 1,
-        ),
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), // ✅ Réduction
+    decoration: BoxDecoration(
+      color: Colors.white.withOpacity(0.2),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(
+        color: Colors.white.withOpacity(0.3),
+        width: 1,
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: Colors.white),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.95),
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: Colors.white), // ✅ Réduction de 16 à 14
+        const SizedBox(width: 5), // ✅ Réduction de 6 à 5
+        Text(
+          text,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.95),
+            fontSize: 12, // ✅ Réduction de 13 à 12
+            fontWeight: FontWeight.w600,
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   List<Widget> _buildFloatingIcons() {
     final icons = [
@@ -1061,139 +1071,146 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
   }
 
   Widget _buildDocumentsList() {
-    if (_isLoading) {
-      return SliverFillRemaining(
-        child: Center(
+  if (_isLoading) {
+    return SliverFillRemaining(
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.primary.withOpacity(0.8),
+                    AppColors.primary,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.description,
+                color: Colors.white,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              'Chargement des documents...',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  if (_documents.isEmpty) {
+    return SliverFillRemaining(
+      hasScrollBody: false, // ✅ Ajout de cette propriété importante
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24), // ✅ Réduction de 32 à 24
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min, // ✅ Ajout pour éviter overflow
             children: [
               Container(
-                width: 80,
-                height: 80,
+                width: 90, // ✅ Réduction de 100 à 90
+                height: 90, // ✅ Réduction de 100 à 90
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                     colors: [
-                      AppColors.primary.withOpacity(0.8),
-                      AppColors.primary,
+                      AppColors.primary.withOpacity(0.1),
+                      AppColors.primary.withOpacity(0.05),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(
+                    color: AppColors.primary.withOpacity(0.2),
+                    width: 2,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.description,
-                  color: Colors.white,
-                  size: 40,
+                child: Icon(
+                  Icons.description_outlined,
+                  size: 45, // ✅ Réduction de 50 à 45
+                  color: AppColors.primary.withOpacity(0.6),
                 ),
               ),
-              const SizedBox(height: 24),
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20), // ✅ Réduction de 24 à 20
               Text(
-                'Chargement des documents...',
+                _searchQuery.isNotEmpty
+                    ? 'Aucun résultat'
+                    : (_selectedType == null
+                        ? 'Aucun document disponible'
+                        : 'Aucun document de ce type'),
+                style: const TextStyle(
+                  fontSize: 18, // ✅ Réduction de 20 à 18
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10), // ✅ Réduction de 12 à 10
+              Text(
+                _searchQuery.isNotEmpty
+                    ? 'Essayez avec d\'autres mots-clés'
+                    : 'Les documents apparaîtront ici',
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.w500,
+                  color: AppColors.textSecondary,
+                  fontSize: 14, // ✅ Réduction de 15 à 14
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 24), // ✅ Réduction de 32 à 24
+              ElevatedButton.icon(
+                onPressed: () async {
+                  await _loadDocuments();
+                  await _loadFavoriteDocuments();
+                },
+                icon: const Icon(Icons.refresh, size: 18), // ✅ Taille icône
+                label: const Text('Actualiser'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20, // ✅ Réduction de 24 à 20
+                    vertical: 10, // ✅ Réduction de 12 à 10
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)
+                  ),
                 ),
               ),
             ],
           ),
         ),
-      );
-    }
-
-    if (_documents.isEmpty) {
-      return SliverFillRemaining(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.primary.withOpacity(0.1),
-                        AppColors.primary.withOpacity(0.05),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(
-                      color: AppColors.primary.withOpacity(0.2),
-                      width: 2,
-                    ),
-                  ),
-                  child: Icon(
-                    Icons.description_outlined,
-                    size: 50,
-                    color: AppColors.primary.withOpacity(0.6),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  _searchQuery.isNotEmpty
-                      ? 'Aucun résultat'
-                      : (_selectedType == null
-                          ? 'Aucun document disponible'
-                          : 'Aucun document de ce type'),
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  _searchQuery.isNotEmpty
-                      ? 'Essayez avec d\'autres mots-clés'
-                      : 'Les documents apparaîtront ici',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 15,
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 32),
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    await _loadDocuments();
-                    await _loadFavoriteDocuments();
-                  },
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Actualiser'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-      sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            return _buildModernDocumentCard(_documents[index]);
-          },
-          childCount: _documents.length,
-        ),
       ),
     );
   }
+
+  return SliverPadding(
+    padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+    sliver: SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          return _buildModernDocumentCard(_documents[index]);
+        },
+        childCount: _documents.length,
+      ),
+    ),
+  );
+}
 
   Widget _buildModernDocumentCard(DocumentModel document) {
     final typeColor = _getDocumentTypeColor(document.documentType);

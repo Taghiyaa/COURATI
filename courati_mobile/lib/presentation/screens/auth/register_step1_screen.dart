@@ -138,7 +138,7 @@ class _RegisterStep1ScreenState extends State<RegisterStep1Screen> {
     } else if (cleanPhone.startsWith('222') && cleanPhone.length == 11) {
       return null; // Format: 22249594002
     } else if (cleanPhone.length == 8 && RegExp(r'^[2-9]').hasMatch(cleanPhone)) {
-      return null; // Format: 49594002
+      return null; // Format: ********
     } else {
       return 'Format invalide. Ex: 49594002, 22249594002, ou +22249594002';
     }
@@ -551,38 +551,8 @@ class _RegisterStep1ScreenState extends State<RegisterStep1Screen> {
                           ),
                           validator: _validateConfirmPassword,
                         ),
-                        const SizedBox(height: 32),
-                        
-                        // Note importante sur email
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.blue.shade200),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(
-                                Icons.mail_outline,
-                                color: Colors.blue,
-                                size: 20,
-                              ),
-                              SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Un code de vérification sera envoyé à votre email',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.blue,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 20),
+                  
                         
                         // Bouton Suivant
                         SizedBox(

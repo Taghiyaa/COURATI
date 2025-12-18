@@ -474,34 +474,45 @@ class PersonalizedHomeView(APIView):
                 user=user
             ).select_related('subject', 'document').order_by('-created_at')[:5]
             
-            # ✅ AMÉLIORATION : Statistiques avec progression globale ET par matière
+            # ========================================
+            # ✅ STATISTIQUES GLOBALES CORRIGÉES
+            # ========================================
+            
             total_subjects = Subject.objects.filter(
                 levels=student_profile.level,
                 majors=student_profile.major,
                 is_active=True
             ).count()
 
-            # Total de documents disponibles pour ce profil
+            # ✅ Total de documents disponibles (actifs uniquement)
             total_documents = Document.objects.filter(
                 subject__levels=student_profile.level,
                 subject__majors=student_profile.major,
                 subject__is_active=True,
-                is_active=True
+                is_active=True  # ✅ Documents actifs uniquement
             ).count()
 
-            # Documents consultés (IN_PROGRESS ou COMPLETED)
+            # ✅ Documents consultés (exclure les documents supprimés)
             viewed_documents = UserProgress.objects.filter(
                 user=user,
+                document__is_active=True,  # ✅ CORRECTION : Exclure documents supprimés
                 status__in=['IN_PROGRESS', 'COMPLETED']
             ).values('document').distinct().count()
 
-            # Calcul de la progression réelle
+            # ✅ SÉCURITÉ : Limiter viewed_documents au maximum de total_documents
+            viewed_documents = min(viewed_documents, total_documents)
+
+            # ✅ Calcul de la progression réelle (limitée à 100%)
             if total_documents > 0:
                 completion_rate = round((viewed_documents / total_documents) * 100, 1)
+                completion_rate = min(completion_rate, 100.0)  # ✅ Limiter à 100%
             else:
                 completion_rate = 0.0
 
-            # ✨ NOUVEAU : Progression détaillée par matière
+            # ========================================
+            # ✅ PROGRESSION PAR MATIÈRE CORRIGÉE
+            # ========================================
+            
             subject_progress = {}
             completed_subjects = 0
 
@@ -510,20 +521,29 @@ class PersonalizedHomeView(APIView):
                 majors=student_profile.major,
                 is_active=True
             ):
+                # ✅ Compter uniquement les documents actifs
                 subject_docs = Document.objects.filter(
                     subject=subject,
                     is_active=True
                 ).count()
                 
                 if subject_docs > 0:
+                    # ✅ CORRECTION CRITIQUE : Exclure les documents supprimés
                     viewed_in_subject = UserProgress.objects.filter(
                         user=user,
                         subject=subject,
+                        document__is_active=True,  # ✅ AJOUT : Exclure documents supprimés
                         status__in=['IN_PROGRESS', 'COMPLETED']
                     ).values('document').distinct().count()
                     
+                    # ✅ SÉCURITÉ : Limiter à subject_docs (évite 3/2 = 150%)
+                    viewed_in_subject = min(viewed_in_subject, subject_docs)
+                    
                     # ✅ Calculer le taux de progression pour cette matière
                     subject_rate = round((viewed_in_subject / subject_docs) * 100, 1)
+                    
+                    # ✅ SÉCURITÉ : Assurer que le taux ne dépasse jamais 100%
+                    subject_rate = min(subject_rate, 100.0)
                     
                     # ✅ Stocker dans le dictionnaire
                     subject_progress[str(subject.id)] = {
@@ -537,8 +557,16 @@ class PersonalizedHomeView(APIView):
                     if viewed_in_subject == subject_docs:
                         completed_subjects += 1
 
+            # ========================================
+            # FAVORIS
+            # ========================================
+            
             total_favorites = UserFavorite.objects.filter(user=user).count()
 
+            # ========================================
+            # SERIALIZATION ET RÉPONSE
+            # ========================================
+            
             serializer = PersonalizedHomeSerializer({
                 'user': user,
                 'student_profile': student_profile,
@@ -554,7 +582,7 @@ class PersonalizedHomeView(APIView):
                     'total_documents': total_documents,
                     'viewed_documents': viewed_documents,
                 },
-                # ✅ NOUVEAU CHAMP : Progression par matière
+                # ✅ Progression détaillée par matière
                 'subject_progress': subject_progress
             })
             
@@ -912,7 +940,7 @@ class DocumentConsultationHistoryView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     
-    # ========================================
+# ========================================
 # VUES PROFESSEURS - GESTION DES MATIÈRES
 # ========================================
 

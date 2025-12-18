@@ -110,25 +110,7 @@ export default function TeacherDashboardPage() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Activités récentes</h3>
-        {Array.isArray((dashboard as any)?.recent_activities) && (dashboard as any).recent_activities.length > 0 ? (
-          <div className="space-y-3">
-            {(dashboard as any).recent_activities.slice(0, 10).map((a: any, idx: number) => (
-              <div key={idx} className="flex items-start gap-3">
-                <div className={`w-2 h-2 rounded-full mt-2 ${a.color === 'blue' ? 'bg-primary-500' : a.color === 'green' ? 'bg-green-500' : a.color === 'purple' ? 'bg-purple-500' : 'bg-gray-400'}`} />
-                <div>
-                  <div className="font-medium text-gray-900">{a.title}</div>
-                  <div className="text-sm text-gray-600">{a.description}{a.subject_name ? ` • ${a.subject_name}` : ''}</div>
-                  <div className="text-xs text-gray-500">{a.created_at ? new Date(a.created_at).toLocaleString() : ''}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-gray-600">Aucune activité récente.</p>
-        )}
-      </div>
+      {/* Section "Activités récentes" retirée */}
     </div>
   );
 }

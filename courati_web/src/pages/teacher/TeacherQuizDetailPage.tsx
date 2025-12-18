@@ -17,6 +17,7 @@ export default function TeacherQuizDetailPage() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedAttempt, setSelectedAttempt] = useState<any | null>(null);
+  const [extremeView, setExtremeView] = useState<'best' | 'worst' | null>(null);
 
   const { data: quiz, isLoading, error } = useQuery({
     queryKey: ['teacher_quiz', quizId],
@@ -347,11 +348,23 @@ export default function TeacherQuizDetailPage() {
                 <div className="text-sm text-gray-600">Score moyen</div>
                 <div className="text-2xl font-bold">{avgScore}%</div>
               </div>
-              <div className="p-4 border rounded-lg">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setExtremeView(prev => prev === 'best' ? null : 'best')}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExtremeView(prev => prev === 'best' ? null : 'best'); }}
+                className={`p-4 border rounded-lg cursor-pointer transition-colors ${extremeView === 'best' ? 'bg-green-50 border-green-200' : 'hover:bg-gray-50'}`}
+              >
                 <div className="text-sm text-gray-600">Meilleur score</div>
                 <div className="text-2xl font-bold text-green-600">{bestScore}%</div>
               </div>
-              <div className="p-4 border rounded-lg">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setExtremeView(prev => prev === 'worst' ? null : 'worst')}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExtremeView(prev => prev === 'worst' ? null : 'worst'); }}
+                className={`p-4 border rounded-lg cursor-pointer transition-colors ${extremeView === 'worst' ? 'bg-red-50 border-red-200' : 'hover:bg-gray-50'}`}
+              >
                 <div className="text-sm text-gray-600">Score le plus faible</div>
                 <div className="text-2xl font-bold text-red-600">{worstScore}%</div>
               </div>
@@ -360,6 +373,41 @@ export default function TeacherQuizDetailPage() {
                 <div className="text-2xl font-bold">{passRate}%</div>
               </div>
             </div>
+
+            {/* Liste des étudiants pour meilleur / plus faible score */}
+            {extremeView && normalized.length > 0 && (
+              (() => {
+                const target = extremeView === 'best' ? bestScore : worstScore;
+                const label = extremeView === 'best' ? 'Meilleur score' : 'Score le plus faible';
+                const items = normalized.filter(a => Number(a._score ?? -1) === Number(target));
+                return (
+                  <div className="border rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-gray-900">{label} — {target}%</h4>
+                      <button onClick={() => setExtremeView(null)} className="text-sm px-2 py-1 rounded border hover:bg-gray-50">Fermer</button>
+                    </div>
+                    {items.length > 0 ? (
+                      <div className="divide-y">
+                        {items.map((a: any) => (
+                          <div key={a.id} className="py-2 flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-gray-900">{a._name}</div>
+                              {a._email && <div className="text-sm text-gray-600">{a._email}</div>}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-sm text-gray-700">{a._score != null ? `${a._score}%` : '-'}</span>
+                              <button onClick={() => setSelectedAttempt(a)} className="px-3 py-1 text-sm text-primary-600 hover:bg-primary-50 rounded">Détails</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-600">Aucun étudiant trouvé pour cette valeur.</div>
+                    )}
+                  </div>
+                );
+              })()
+            )}
 
             {normalized.length > 0 ? (
               <div className="space-y-3">

@@ -34,6 +34,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.setItem('refresh_token', response.refresh);
       localStorage.setItem('user', JSON.stringify(response.user));
 
+      // ✅ Mettre à jour le state AVANT de résoudre la promesse
       set({
         user: response.user,
         token: response.access,
@@ -41,27 +42,46 @@ export const useAuthStore = create<AuthState>((set) => ({
         isLoading: false,
         error: null,
       });
+
+      // ✅ La promesse se résout avec succès
     } catch (error: any) {
-      console.error('Login error:', error);
-      console.error('Error response:', error.response);
+      console.error('❌ Login error:', error);
+      console.error('❌ Error response:', error.response);
+      console.error('❌ Error response data:', error.response?.data);
       
-      // Gérer différents formats d'erreur du backend
+      // ✅ CORRECTION : Gérer le format Django avec non_field_errors
       let errorMessage = 'Identifiants incorrects';
       
       if (error.response?.data) {
         const data = error.response.data;
-        // Essayer différents formats d'erreur
-        errorMessage = data.message || 
-                      data.detail || 
-                      data.error ||
-                      data.non_field_errors?.[0] ||
-                      (typeof data === 'string' ? data : 'Identifiants incorrects');
+        console.log('📦 Data reçue du backend:', data);
+        
+        // ✅ PRIORITÉ 1: non_field_errors (format Django standard)
+        if (data.non_field_errors && Array.isArray(data.non_field_errors)) {
+          errorMessage = data.non_field_errors[0];
+        }
+        // Autres formats d'erreur possibles
+        else if (data.detail) {
+          errorMessage = data.detail;
+        }
+        else if (data.message) {
+          errorMessage = data.message;
+        }
+        else if (data.error) {
+          errorMessage = data.error;
+        }
+        else if (typeof data === 'string') {
+          errorMessage = data;
+        }
       } else if (error.message) {
         errorMessage = error.message === 'Network Error' 
           ? 'Erreur de connexion au serveur' 
           : error.message;
       }
       
+      console.log('💬 Message d\'erreur final:', errorMessage);
+      
+      // ✅ Mettre à jour le state avec l'erreur
       set({
         user: null,
         token: null,
@@ -69,7 +89,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         isLoading: false,
         error: errorMessage,
       });
-      throw error;
+      
+      // ✅ IMPORTANT : Rejeter la promesse pour que le composant puisse catch l'erreur
+      throw new Error(errorMessage);
     }
   },
 

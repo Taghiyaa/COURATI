@@ -506,7 +506,16 @@ class QuizAttempt(models.Model):
         """Vérifie si le quiz est réussi"""
         if self.score is None:
             return False
-        return self.score >= self.quiz.passing_percentage
+        
+        total = float(self.quiz.total_points)
+        if total == 0:
+            return False
+
+        # convertit le score en pourcentage
+        score_percentage = (float(self.score) / total) * 100
+
+        return score_percentage >= float(self.quiz.passing_percentage)
+
     
     @property
     def time_spent(self):

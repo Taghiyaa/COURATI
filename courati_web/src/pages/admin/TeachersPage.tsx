@@ -69,6 +69,13 @@ export default function TeachersPage() {
     });
   }, [teachers, searchTerm]);
 
+  // Client-side pagination
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const totalPages = Math.max(1, Math.ceil(filteredTeachers.length / pageSize));
+  const pageStart = (page - 1) * pageSize;
+  const pageItems = filteredTeachers.slice(pageStart, pageStart + pageSize);
+
   // Mutation pour supprimer
   const deleteMutation = useMutation({
     mutationFn: teachersAPI.delete,
@@ -259,7 +266,7 @@ export default function TeachersPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredTeachers.map((teacher: Teacher) => {
+              {pageItems.map((teacher: Teacher) => {
                 // Gérer le cas où les données sont dans teacher.user
                 const firstName = teacher.first_name || teacher.user?.first_name || '';
                 const lastName = teacher.last_name || teacher.user?.last_name || '';
@@ -375,6 +382,40 @@ export default function TeachersPage() {
             <Plus className="h-5 w-5" />
             <span>Créer un enseignant</span>
           </button>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {filteredTeachers.length > 0 && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-gray-600">
+            Page {page} / {totalPages} • {filteredTeachers.length} résultat(s)
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+            >
+              Précédent
+            </button>
+            <button 
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+            >
+              Suivant
+            </button>
+            <select 
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+            >
+              {[10, 20, 50].map((s) => (
+                <option key={s} value={s}>{s}/page</option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
 

@@ -41,6 +41,9 @@ export default function TeacherSubjectDetailPage() {
   // Documents filters
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  // Client-side pagination (documents)
+  const [docPage, setDocPage] = useState<number>(1);
+  const [docPageSize, setDocPageSize] = useState<number>(10);
 
   const { data: stats, isLoading, error } = useQuery({
     queryKey: ['teacher_subject_stats', subjectId],
@@ -277,6 +280,14 @@ const { data: mySubjects } = useQuery({
   const docsArray: any[] = Array.isArray(documents)
     ? documents
     : (documents?.results || documents?.documents || []);
+  const docTotalPages = Math.max(1, Math.ceil(docsArray.length / docPageSize));
+  const docStart = (docPage - 1) * docPageSize;
+  const docPageItems = docsArray.slice(docStart, docStart + docPageSize);
+
+  // Reset page on filters change
+  if (docPage !== 1 && (searchTerm || typeFilter)) {
+    // noop in render; rely on controlled handlers below
+  }
 
   const handleDownload = async (doc: any) => {
     try {
@@ -373,12 +384,12 @@ const { data: mySubjects } = useQuery({
               <input
                 placeholder="Rechercher un document..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setDocPage(1); }}
                 className="flex-1 min-w-[240px] px-3 py-2 border rounded"
               />
               <select
                 value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
+                onChange={(e) => { setTypeFilter(e.target.value); setDocPage(1); }}
                 className="px-3 py-2 border rounded min-w-[160px]"
               >
                 <option value="">Tous les types</option>
@@ -407,8 +418,8 @@ const { data: mySubjects } = useQuery({
                 <tbody>
                   {docsLoading ? (
                     <tr><td className="py-6 px-4" colSpan={8}>Chargement...</td></tr>
-                  ) : docsArray.length > 0 ? (
-                    docsArray.map((doc: any) => (
+                  ) : docPageItems.length > 0 ? (
+                    docPageItems.map((doc: any) => (
                       <tr key={doc.id} className={`border-t ${doc.is_active ? '' : 'opacity-50 bg-gray-50'}`}>
                         <td className="py-3 px-4">
                           <div className="flex items-start gap-2">
@@ -503,6 +514,38 @@ const { data: mySubjects } = useQuery({
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination documents */}
+            {docsArray.length > 0 && (
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">Page {docPage} / {docTotalPages} • {docsArray.length} document(s)</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setDocPage((p) => Math.max(1, p - 1))}
+                    disabled={docPage <= 1}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                  >
+                    Précédent
+                  </button>
+                  <button
+                    onClick={() => setDocPage((p) => Math.min(docTotalPages, p + 1))}
+                    disabled={docPage >= docTotalPages}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                  >
+                    Suivant
+                  </button>
+                  <select
+                    value={docPageSize}
+                    onChange={(e) => { setDocPageSize(Number(e.target.value)); setDocPage(1); }}
+                    className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                  >
+                    {[10, 20, 50].map((s) => (
+                      <option key={s} value={s}>{s}/page</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

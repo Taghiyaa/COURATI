@@ -18,22 +18,46 @@ export default function TeacherModal({ teacher, onClose, onSuccess }: TeacherMod
     password: '',
     first_name: '',
     last_name: '',
-    phone: '',
+    phone: '', // Stocker seulement les 8 chiffres
     specialization: '',
   });
 
   // Pré-remplir le formulaire en mode édition
   useEffect(() => {
     if (teacher) {
+      console.log('📝 Teacher data COMPLET:', JSON.stringify(teacher, null, 2));
+      
+      // ✅ CORRECTION : Le champ s'appelle phone_number, pas phone
+      const phoneFromDB = (teacher as any).phone_number || teacher.phone || '';
+      console.log('📞 Phone from DB:', phoneFromDB);
+      
+      // Extraire le numéro sans le préfixe +222 s'il existe
+      let phoneNumber = '';
+      if (phoneFromDB) {
+        phoneNumber = phoneFromDB.toString().trim();
+        console.log('📞 Phone avant traitement:', phoneNumber);
+        
+        // Enlever +222 s'il est présent
+        if (phoneNumber.startsWith('+222')) {
+          phoneNumber = phoneNumber.slice(4);
+          console.log('📞 Phone après suppression +222:', phoneNumber);
+        }
+        // Enlever aussi les espaces éventuels
+        phoneNumber = phoneNumber.replace(/\s/g, '');
+        console.log('📞 Phone final (sans espaces):', phoneNumber);
+      }
+      
       setFormData({
-        username: teacher.username,
-        email: teacher.email,
+        username: teacher.username || '',
+        email: teacher.email || '',
         password: '', // Ne pas pré-remplir le mot de passe
-        first_name: teacher.first_name,
-        last_name: teacher.last_name,
-        phone: teacher.phone || '',
+        first_name: teacher.first_name || '',
+        last_name: teacher.last_name || '',
+        phone: phoneNumber,
         specialization: teacher.specialization || '',
       });
+      
+      console.log('✅ FormData mis à jour avec phone:', phoneNumber);
     }
   }, [teacher]);
 
@@ -42,9 +66,31 @@ export default function TeacherModal({ teacher, onClose, onSuccess }: TeacherMod
     mutationFn: async (data: CreateTeacherDTO | UpdateTeacherDTO) => {
       console.log('📤 Envoi données enseignant:', data);
       
+      // Ajouter le préfixe +222 au téléphone si renseigné
+      const phoneWithPrefix = data.phone ? `+222${data.phone}` : '';
+      
+      // ✅ CORRECTION : Envoyer phone_number au backend
+      const dataToSend: any = { 
+        ...data, 
+        phone_number: phoneWithPrefix || null, // null si vide
+        specialization: data.specialization || null, // null si vide
+      };
+      
+      // Supprimer phone car le backend attend phone_number
+      delete dataToSend.phone;
+      
+      // Nettoyer les champs vides (convertir "" en null)
+      Object.keys(dataToSend).forEach(key => {
+        if (dataToSend[key] === '') {
+          dataToSend[key] = null;
+        }
+      });
+      
+      console.log('📤 Données après traitement:', dataToSend);
+      
       if (teacher) {
         // Mode édition - ne pas envoyer username et password
-        const { username, password, ...updateData } = data as any;
+        const { username, password, ...updateData } = dataToSend;
         console.log('✏️ Mode édition, données:', updateData);
         console.log('🔑 Utilisation user_id:', teacher.user_id);
         const result = await teachersAPI.update(teacher.user_id, updateData);
@@ -52,8 +98,8 @@ export default function TeacherModal({ teacher, onClose, onSuccess }: TeacherMod
         return result;
       } else {
         // Mode création
-        console.log('➕ Mode création, données:', data);
-        const result = await teachersAPI.create(data as CreateTeacherDTO);
+        console.log('➕ Mode création, données:', dataToSend);
+        const result = await teachersAPI.create(dataToSend as CreateTeacherDTO);
         console.log('✅ Enseignant créé:', result);
         return result;
       }
@@ -102,12 +148,42 @@ export default function TeacherModal({ teacher, onClose, onSuccess }: TeacherMod
       return;
     }
 
+    // Validation du téléphone si renseigné
+    if (formData.phone && formData.phone.length !== 8) {
+      toast.error('Le numéro de téléphone doit contenir 8 chiffres');
+      return;
+    }
+
     mutation.mutate(formData as any);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Gestionnaire spécifique pour le téléphone
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value;
+    
+    // Supprimer tous les caractères non numériques
+    value = value.replace(/\D/g, '');
+    
+    // Limiter à 8 chiffres
+    if (value.length > 8) {
+      value = value.slice(0, 8);
+    }
+    
+    setFormData(prev => ({ ...prev, phone: value }));
+  };
+
+  // Formater l'affichage du téléphone (XX XX XX XX)
+  const formatPhoneDisplay = (phone: string) => {
+    if (!phone) return '';
+    if (phone.length <= 2) return phone;
+    if (phone.length <= 4) return `${phone.slice(0, 2)} ${phone.slice(2)}`;
+    if (phone.length <= 6) return `${phone.slice(0, 2)} ${phone.slice(2, 4)} ${phone.slice(4)}`;
+    return `${phone.slice(0, 2)} ${phone.slice(2, 4)} ${phone.slice(4, 6)} ${phone.slice(6)}`;
   };
 
   return (
@@ -215,19 +291,30 @@ export default function TeacherModal({ teacher, onClose, onSuccess }: TeacherMod
             </div>
           )}
 
-          {/* Téléphone */}
+          {/* Téléphone avec préfixe +222 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Téléphone
             </label>
-            <input
-              type="tel"
-              name="phone"
-              value={formData.phone}
-              onChange={handleChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              placeholder="+212 6XX XXX XXX"
-            />
+            <div className="relative">
+              {/* Préfixe fixe +222 */}
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-700 font-medium pointer-events-none z-10">
+                +222
+              </span>
+              {/* Input pour les 8 chiffres */}
+              <input
+                type="tel"
+                name="phone"
+                value={formatPhoneDisplay(formData.phone)}
+                onChange={handlePhoneChange}
+                className="w-full pl-16 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="XX XX XX XX"
+                maxLength={11} // 8 chiffres + 3 espaces
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Le numéro sera enregistré avec le préfixe +222
+            </p>
           </div>
 
           {/* Spécialisation */}
